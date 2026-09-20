@@ -1,0 +1,103 @@
+/**
+ * Taxonomy reads.
+ *
+ * Served from the `Condition` table rather than from the TypeScript seed file,
+ * so the research team can add a condition during October without a redeploy
+ * (rubric item 5, tier 3). `version` is a content hash of the active rows: it
+ * changes the moment the list is edited and is used as the ETag, so the PWA can
+ * cache the taxonomy and revalidate cheaply on a poor connection.
+ *
+ * OWNERSHIP: Stream 1 (backend).
+ */
+import { createHash } from 'node:crypto'
+
+import {
+  CONDITION_CATEGORIES,
+  CONDITION_CATEGORY_LABELS,
+  isOtherCondition,
+  type ConditionCategory,
+  type TaxonomyResponse,
+} from '@/lib/contract'
+import { prisma } from '@/lib/db'
+import type { Condition } from '@/generated/prisma'
+
+function splitSynonyms(value: string): string[] {
+  return value
+    .split('|')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
+function isKnownCategory(value: string): value is ConditionCategory {
+  return (CONDITION_CATEGORIES as readonly string[]).includes(value)
+}
+
+export function taxonomyVersion(conditions: Condition[]): string {
+  const hash = createHash('sha256')
+  for (const c of [...conditions].sort((a, b) => a.code.localeCompare(b.code))) {
+    hash.update(`${c.code}\u0000${c.category}\u0000${c.label}\u0000${c.synonyms}\u0000${c.rank}\n`)
+  }
+  return `v1-${hash.digest('hex').slice(0, 16)}`
+}
+
+export async function getTaxonomy(): Promise<TaxonomyResponse> {
+  const conditions = await prisma.condition.findMany({
+    where: { isActive: true },
+    orderBy: [{ rank: 'asc' }, { label: 'asc' }],
+  })
+
+  // Every one of the five categories is always present, even if empty, so the
+  // frontend never has to special-case a missing section.
+  const categories = CONDITION_CATEGORIES.map((code) => ({
+    code,
+    label: CONDITION_CATEGORY_LABELS[code],
+    conditions: conditions
+      .filter((c) => c.category === code)
+      .map((c) => ({
+        code: c.code,
+        label: c.label,
+        synonyms: splitSynonyms(c.synonyms),
+        rank: c.rank,
+        isOther: isOtherCondition(c.code),
+      })),
+  }))
+
+  // A row seeded with a category outside the fixed five would otherwise vanish
+  // silently; surface it in the logs rather than shipping a short list.
+  const orphans = conditions.filter((c) => !isKnownCategory(c.category))
+  if (orphans.length > 0) {
+    console.warn(
+      '[taxonomy] conditions with an unknown category are not being served',
+      orphans.map((c) => c.code),
+    )
+  }
+
+  return { categories, version: taxonomyVersion(conditions) }
+}
+
+export interface ConditionLookup {
+  code: string
+  category: string
+  label: string
+  isActive: boolean
+}
+
+/** Fetch the given codes for validation / labelling, keyed by code. */
+export async function lookupConditions(
+  codes: string[],
+): Promise<Map<string, ConditionLookup>> {
+  if (codes.length === 0) return new Map()
+  const rows = await prisma.condition.findMany({
+    where: { code: { in: Array.from(new Set(codes)) } },
+    select: { code: true, category: true, label: true, isActive: true },
+  })
+  return new Map(rows.map((row) => [row.code, row]))
+}
+
+/** Every code → label, for labelling export rows. */
+export async function conditionLabels(): Promise<Map<string, string>> {
+  const rows = await prisma.condition.findMany({
+    select: { code: true, label: true },
+  })
+  return new Map(rows.map((row) => [row.code, row.label]))
+}
