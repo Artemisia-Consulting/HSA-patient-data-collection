@@ -55,15 +55,15 @@ function parseAt(value: string | undefined): Date {
   return parsed
 }
 
-function describe(event: DispatchEvent): string {
+function describe(event: DispatchEvent, dryRun: boolean): string {
   switch (event.type) {
     case 'SENT':
-      return `SENT      ${event.practitionerId} via ${event.channel} to ${event.recipient}${
+      return `${dryRun ? 'WOULD SEND' : 'SENT      '} ${event.practitionerId} via ${event.channel} to ${event.recipient}${
         event.fellBack ? '  (fell back from the declared channel)' : ''
       }`
     case 'SKIPPED':
       return `SKIPPED   ${event.practitionerId} ${event.reason}${
-        event.recorded ? '' : ' (already recorded)'
+        dryRun || event.recorded ? '' : ' (already recorded)'
       }`
     case 'DEFERRED':
       return `DEFERRED  ${event.practitionerId} ${event.reason} until ${event.until}`
@@ -113,7 +113,7 @@ async function main(): Promise<void> {
     return
   }
 
-  for (const event of summary.events) console.log('  ' + describe(event))
+  for (const event of summary.events) console.log('  ' + describe(event, summary.dryRun))
 
   console.log(
     `considered=${summary.considered} sent=${summary.sent} skipped=${summary.skipped} ` +
