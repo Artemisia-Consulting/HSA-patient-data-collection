@@ -18,28 +18,27 @@
 import { ChoiceChips } from '@/components/ui/ChoiceChips'
 import type { DraftCondition } from '@/lib/client/entry'
 import {
+  ALSO_SEEING_GP_QUESTION,
   CONDITION_CATEGORY_LABELS,
   DIAGNOSIS_BASES,
   DIAGNOSIS_BASIS_LABELS,
+  DIAGNOSIS_BASIS_QUESTION,
   GP_CO_MANAGEMENT,
   GP_CO_MANAGEMENT_LABELS,
   REFERRED_BY_GP,
   REFERRED_BY_GP_LABELS,
+  REFERRED_BY_GP_QUESTION,
   type DiagnosisBasis,
   type GpCoManagement,
   type ReferredByGp,
 } from '@/lib/contract/enums'
 import { isOtherCondition } from '@/lib/contract/taxonomy'
 
+// The labels are already the short wording the product owner specified, so
+// there is no separate `shortLabel` to keep in step with them.
 const DIAGNOSIS_OPTIONS = DIAGNOSIS_BASES.map((value) => ({
   value,
   label: DIAGNOSIS_BASIS_LABELS[value],
-  shortLabel:
-    value === 'CLINICAL_DIAGNOSIS'
-      ? 'My diagnosis'
-      : value === 'PATIENT_REPORTED_PRIOR'
-        ? 'Patient-reported'
-        : 'Complaint only',
 }))
 
 const GP_OPTIONS = GP_CO_MANAGEMENT.map((value) => ({
@@ -137,21 +136,21 @@ export function SelectedConditionCard({
 
       <div className="mt-3 space-y-2.5">
         <ChoiceChips<DiagnosisBasis>
-          legend="How did you arrive at this?"
+          legend={DIAGNOSIS_BASIS_QUESTION}
           options={DIAGNOSIS_OPTIONS}
           value={condition.diagnosisBasis}
           onChange={(diagnosisBasis) => onChange({ diagnosisBasis })}
           size="sm"
         />
         <ChoiceChips<GpCoManagement>
-          legend="Also seeing a GP for this?"
+          legend={ALSO_SEEING_GP_QUESTION}
           options={GP_OPTIONS}
           value={condition.alsoSeeingGp}
           onChange={(alsoSeeingGp) => onChange({ alsoSeeingGp })}
           size="sm"
         />
         <ChoiceChips<ReferredByGp>
-          legend="Referred by a GP?"
+          legend={REFERRED_BY_GP_QUESTION}
           options={REFERRED_OPTIONS}
           value={condition.referredByGp}
           onChange={(referredByGp) => onChange({ referredByGp })}

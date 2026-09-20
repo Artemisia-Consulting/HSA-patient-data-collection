@@ -86,9 +86,51 @@ export const COLLECTION_END_DATE =
   process.env.COLLECTION_END_DATE ?? '2026-10-31'
 
 /**
+ * How far before the collection opens an entry may still be saved.
+ *
+ * Two different questions get asked about a date and they have deliberately
+ * different answers:
+ *
+ *  - *Does this day count towards the study?* — `isWithinCollectionWindow`.
+ *    Only October does. Reminders fire on this, and it is what the research
+ *    dataset means.
+ *  - *May a log be saved for this day at all?* — `isWritableLogDate`. This is
+ *    wider on the early side, so the app can be exercised with real entries
+ *    during development and practitioner training rather than only being
+ *    tested for the first time on the morning of 1 October.
+ *
+ * Pre-window entries are saved as ordinary rows and are not marked in any
+ * way, because they do not need to be: `logDate` is a sortable string, so
+ * clearing them before the study opens is one statement. Patients and
+ * conditions cascade from the log.
+ *
+ *   DELETE FROM "DailyLog" WHERE "logDate" < '2026-10-01';
+ *
+ * Ninety days is a quarter — long enough to cover a build and a pilot, short
+ * enough that a mistyped year is still rejected rather than quietly stored.
+ */
+const EARLY_ENTRY_DAYS = 90
+
+export const EARLY_ENTRY_FROM_DATE = addDaysToLogDate(
+  COLLECTION_START_DATE,
+  -EARLY_ENTRY_DAYS,
+)
+
+/**
+ * Is this day part of the study?
+ *
  * String comparison is safe here — "yyyy-MM-dd" sorts lexicographically in
  * the same order it sorts chronologically, which is why the format was chosen.
  */
 export function isWithinCollectionWindow(logDate: string): boolean {
   return logDate >= COLLECTION_START_DATE && logDate <= COLLECTION_END_DATE
+}
+
+/**
+ * May a log be written for this day? Wider than the collection window, but
+ * only at the front: there is a reason to record a day before the study opens
+ * and none to record one after it has closed.
+ */
+export function isWritableLogDate(logDate: string): boolean {
+  return logDate >= EARLY_ENTRY_FROM_DATE && logDate <= COLLECTION_END_DATE
 }

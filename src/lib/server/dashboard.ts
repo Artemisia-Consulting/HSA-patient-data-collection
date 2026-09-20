@@ -10,16 +10,20 @@
  * agree:
  *
  *  - `from`/`to` bound the log date, inclusive.
- *  - `patientType` filters *rows*: "new" keeps days with at least one new
- *    patient, "followup" keeps days with at least one follow-up. It does not
- *    zero the other column — the totals stay the real totals for the days
- *    shown.
+ *  - `patientType` filters *patients*: "new" keeps new patients, "followup"
+ *    keeps returning ones, and a day survives when it has at least one.
  *  - `category` / `conditionCode` / `diagnosisBasis` / `alsoSeeingGp` /
- *    `referredByGp` filter *condition entries*. A day is in scope when at least
- *    one of its entries matches, and only the matching entries are counted —
- *    so "referred by a GP = yes" gives the referral numbers the HSA report is
- *    built on (rubric item 7 tier 3) rather than every entry on a day that
- *    happened to contain one.
+ *    `referredByGp` filter *condition entries*, and a patient is kept only when
+ *    one of their conditions matches — so "referred by a conventional
+ *    practitioner = yes" gives the referral numbers the HSA report is built on
+ *    (rubric item 7 tier 3) rather than every entry on a day that happened to
+ *    contain one.
+ *
+ * Patient counts are summed from the patient rows in scope, not from
+ * DailyLog.newPatients. With no filters the two are identical — the contract
+ * refuses a submission where they disagree — but under a filter only the
+ * summed version answers the question actually asked, which is "how many
+ * patients matched", not "how many patients were seen on days where one did".
  *
  * OWNERSHIP: Stream 1 (backend).
  */
@@ -27,6 +31,7 @@ import {
   CONDITION_CATEGORIES,
   CONDITION_CATEGORY_LABELS,
   DIAGNOSIS_BASES,
+  PATIENT_TYPES,
   REMINDER_LINK_QUERY_PARAM,
   dashboardFilterSchema,
   isOtherCondition,
@@ -35,6 +40,7 @@ import {
   type DashboardFilter,
   type DashboardSummary,
   type DiagnosisBasis,
+  type PatientType,
 } from '@/lib/contract'
 import { prisma } from '@/lib/db'
 import type { Prisma } from '@/generated/prisma'
@@ -90,6 +96,24 @@ function hasEntryFilter(filter: DashboardFilter): boolean {
   return Object.keys(entryWhere(filter)).length > 0
 }
 
+/**
+ * Which patients are in scope. Both halves are applied to the *same* patient,
+ * which is the whole point of the patient-level model: "new patients referred
+ * by a conventional practitioner" is now one condition on one row rather than
+ * two independent conditions that a day could satisfy separately.
+ */
+function patientWhere(filter: DashboardFilter): Prisma.PatientEntryWhereInput {
+  return {
+    ...(filter.patientType === 'new' ? { patientType: 'NEW' } : {}),
+    ...(filter.patientType === 'followup' ? { patientType: 'FOLLOW_UP' } : {}),
+    ...(hasEntryFilter(filter) ? { conditions: { some: entryWhere(filter) } } : {}),
+  }
+}
+
+function hasPatientFilter(filter: DashboardFilter): boolean {
+  return Object.keys(patientWhere(filter)).length > 0
+}
+
 function logWhere(filter: DashboardFilter): Prisma.DailyLogWhereInput {
   const dateRange: Prisma.StringFilter = {}
   if (filter.from) dateRange.gte = filter.from
@@ -97,18 +121,14 @@ function logWhere(filter: DashboardFilter): Prisma.DailyLogWhereInput {
 
   return {
     ...(filter.from || filter.to ? { logDate: dateRange } : {}),
-    ...(filter.patientType === 'new' ? { newPatients: { gt: 0 } } : {}),
-    ...(filter.patientType === 'followup' ? { followUpPatients: { gt: 0 } } : {}),
-    ...(hasEntryFilter(filter) ? { conditions: { some: entryWhere(filter) } } : {}),
+    ...(hasPatientFilter(filter) ? { patients: { some: patientWhere(filter) } } : {}),
   }
 }
 
-type ScopedLog = {
+type ScopedPatient = {
   id: string
-  logDate: string
-  newPatients: number
-  followUpPatients: number
-  practitioner: { id: string; province: string | null }
+  patientType: string
+  position: number
   conditions: Array<{
     id: string
     category: string
@@ -121,6 +141,15 @@ type ScopedLog = {
   }>
 }
 
+type ScopedLog = {
+  id: string
+  logDate: string
+  newPatients: number
+  followUpPatients: number
+  practitioner: { id: string; province: string | null }
+  patients: ScopedPatient[]
+}
+
 async function fetchScopedLogs(filter: DashboardFilter): Promise<ScopedLog[]> {
   return prisma.dailyLog.findMany({
     where: logWhere(filter),
@@ -131,18 +160,27 @@ async function fetchScopedLogs(filter: DashboardFilter): Promise<ScopedLog[]> {
       followUpPatients: true,
       // POPIA: id + province only. The email column is never read here.
       practitioner: { select: { id: true, province: true } },
-      conditions: {
-        where: hasEntryFilter(filter) ? entryWhere(filter) : undefined,
-        orderBy: { createdAt: 'asc' },
+      patients: {
+        where: hasPatientFilter(filter) ? patientWhere(filter) : undefined,
+        orderBy: [{ patientType: 'desc' }, { position: 'asc' }],
         select: {
           id: true,
-          category: true,
-          conditionCode: true,
-          conditionOther: true,
-          diagnosisBasis: true,
-          alsoSeeingGp: true,
-          referredByGp: true,
-          createdAt: true,
+          patientType: true,
+          position: true,
+          conditions: {
+            where: hasEntryFilter(filter) ? entryWhere(filter) : undefined,
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              category: true,
+              conditionCode: true,
+              conditionOther: true,
+              diagnosisBasis: true,
+              alsoSeeingGp: true,
+              referredByGp: true,
+              createdAt: true,
+            },
+          },
         },
       },
     },
@@ -177,33 +215,50 @@ export async function getDashboardSummary(
     referredByGpNotApplicable: 0,
   }
 
+  const byType = new Map<string, { patients: number; entries: number }>()
+
   let newPatients = 0
   let followUpPatients = 0
   let conditionEntries = 0
+  let patientsWithMultipleConditions = 0
 
   for (const log of logs) {
     reporting.add(log.practitioner.id)
-    newPatients += log.newPatients
-    followUpPatients += log.followUpPatients
 
     const day = byDate.get(log.logDate) ?? { newPatients: 0, followUpPatients: 0 }
-    day.newPatients += log.newPatients
-    day.followUpPatients += log.followUpPatients
-    byDate.set(log.logDate, day)
 
-    for (const entry of log.conditions) {
-      conditionEntries += 1
-      byCategory.set(entry.category, (byCategory.get(entry.category) ?? 0) + 1)
-      byBasis.set(entry.diagnosisBasis, (byBasis.get(entry.diagnosisBasis) ?? 0) + 1)
+    for (const patient of log.patients) {
+      if (patient.patientType === 'NEW') {
+        newPatients += 1
+        day.newPatients += 1
+      } else {
+        followUpPatients += 1
+        day.followUpPatients += 1
+      }
 
-      if (entry.alsoSeeingGp === 'YES') coManagement.alsoSeeingGpYes += 1
-      else if (entry.alsoSeeingGp === 'NO') coManagement.alsoSeeingGpNo += 1
-      else coManagement.alsoSeeingGpUnsure += 1
+      const typeTotals = byType.get(patient.patientType) ?? { patients: 0, entries: 0 }
+      typeTotals.patients += 1
+      typeTotals.entries += patient.conditions.length
+      byType.set(patient.patientType, typeTotals)
 
-      if (entry.referredByGp === 'YES') coManagement.referredByGpYes += 1
-      else if (entry.referredByGp === 'NO') coManagement.referredByGpNo += 1
-      else coManagement.referredByGpNotApplicable += 1
+      if (patient.conditions.length > 1) patientsWithMultipleConditions += 1
+
+      for (const entry of patient.conditions) {
+        conditionEntries += 1
+        byCategory.set(entry.category, (byCategory.get(entry.category) ?? 0) + 1)
+        byBasis.set(entry.diagnosisBasis, (byBasis.get(entry.diagnosisBasis) ?? 0) + 1)
+
+        if (entry.alsoSeeingGp === 'YES') coManagement.alsoSeeingGpYes += 1
+        else if (entry.alsoSeeingGp === 'NO') coManagement.alsoSeeingGpNo += 1
+        else coManagement.alsoSeeingGpUnsure += 1
+
+        if (entry.referredByGp === 'YES') coManagement.referredByGpYes += 1
+        else if (entry.referredByGp === 'NO') coManagement.referredByGpNo += 1
+        else coManagement.referredByGpNotApplicable += 1
+      }
     }
+
+    byDate.set(log.logDate, day)
   }
 
   return {
@@ -231,6 +286,14 @@ export async function getDashboardSummary(
       diagnosisBasis,
       entries: byBasis.get(diagnosisBasis) ?? 0,
     })),
+    // Both types always present, for the same reason as byCategory: a stable
+    // shape means an empty series reads as zero rather than as missing data.
+    byPatientType: PATIENT_TYPES.map((patientType: PatientType) => ({
+      patientType,
+      patients: byType.get(patientType)?.patients ?? 0,
+      entries: byType.get(patientType)?.entries ?? 0,
+    })),
+    patientsWithMultipleConditions,
   }
 }
 
@@ -239,15 +302,30 @@ export async function getDashboardSummary(
  * ------------------------------------------------------------------ */
 
 /**
- * One row per condition entry. A day logged with no conditions still produces
- * a row, with the condition columns null, so the patient counts for that day
- * are not lost from the export — which is why the contract makes those columns
- * nullable.
+ * One row per condition entry, carrying the patient it belongs to.
+ *
+ * A patient logged without any conditions itemised still produces a row, with
+ * the condition columns null — they were seen, and dropping them would make
+ * the export's patient count disagree with the dashboard's. Likewise a day
+ * with no patients at all keeps a row with `patientId` null.
+ *
+ * `patientId` is what makes the export analysable per patient: two rows sharing
+ * one means one person presented with two conditions. It is the random row id,
+ * so it groups within a visit and links nothing across days (POPIA).
  */
 export async function getDashboardRows(
   filter: DashboardFilter,
 ): Promise<DashboardEntryRow[]> {
   const [logs, labels] = await Promise.all([fetchScopedLogs(filter), conditionLabels()])
+
+  const emptyConditionColumns = {
+    category: null,
+    conditionCode: null,
+    conditionLabel: null,
+    diagnosisBasis: null,
+    alsoSeeingGp: null,
+    referredByGp: null,
+  } as const
 
   const rows: DashboardEntryRow[] = []
   for (const log of logs) {
@@ -256,37 +334,44 @@ export async function getDashboardRows(
       practitionerId: log.practitioner.id,
       province: log.practitioner.province,
       logDate: log.logDate,
+      // The day's own recorded counts, unaffected by the filters — context for
+      // the row, not a count of what matched. Use the summary for that.
       newPatients: log.newPatients,
       followUpPatients: log.followUpPatients,
     }
 
-    if (log.conditions.length === 0) {
-      rows.push({
-        ...base,
-        category: null,
-        conditionCode: null,
-        conditionLabel: null,
-        diagnosisBasis: null,
-        alsoSeeingGp: null,
-        referredByGp: null,
-      })
+    if (log.patients.length === 0) {
+      rows.push({ ...base, patientId: null, patientType: null, ...emptyConditionColumns })
       continue
     }
 
-    for (const entry of log.conditions) {
-      rows.push({
+    for (const patient of log.patients) {
+      const patientBase = {
         ...base,
-        category: entry.category as DashboardEntryRow['category'],
-        conditionCode: entry.conditionCode,
-        // For an "Other (specify)" row the practitioner's own wording is the
-        // only label worth having; the contract has no separate column for it.
-        conditionLabel: isOtherCondition(entry.conditionCode)
-          ? (entry.conditionOther ?? labels.get(entry.conditionCode) ?? null)
-          : (labels.get(entry.conditionCode) ?? null),
-        diagnosisBasis: entry.diagnosisBasis as DashboardEntryRow['diagnosisBasis'],
-        alsoSeeingGp: entry.alsoSeeingGp as DashboardEntryRow['alsoSeeingGp'],
-        referredByGp: entry.referredByGp as DashboardEntryRow['referredByGp'],
-      })
+        patientId: patient.id,
+        patientType: patient.patientType as DashboardEntryRow['patientType'],
+      }
+
+      if (patient.conditions.length === 0) {
+        rows.push({ ...patientBase, ...emptyConditionColumns })
+        continue
+      }
+
+      for (const entry of patient.conditions) {
+        rows.push({
+          ...patientBase,
+          category: entry.category as DashboardEntryRow['category'],
+          conditionCode: entry.conditionCode,
+          // For an "Other (specify)" row the practitioner's own wording is the
+          // only label worth having; the contract has no separate column for it.
+          conditionLabel: isOtherCondition(entry.conditionCode)
+            ? (entry.conditionOther ?? labels.get(entry.conditionCode) ?? null)
+            : (labels.get(entry.conditionCode) ?? null),
+          diagnosisBasis: entry.diagnosisBasis as DashboardEntryRow['diagnosisBasis'],
+          alsoSeeingGp: entry.alsoSeeingGp as DashboardEntryRow['alsoSeeingGp'],
+          referredByGp: entry.referredByGp as DashboardEntryRow['referredByGp'],
+        })
+      }
     }
   }
   return rows

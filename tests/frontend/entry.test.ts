@@ -12,18 +12,30 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  allConditions,
+  COLLAPSED,
+  countOf,
   deriveDefaults,
   emptyForm,
+  firstFailingPatient,
   formFromDailyLog,
   formFromRequest,
   isEmptyEntry,
   newDraftCondition,
+  newDraftPatient,
+  nextOpenRequest,
+  patientsOfType,
+  resolveOpenPatient,
+  setPatientCount,
   shouldReplaceForm,
   toDailyLogRequest,
   totalPatients,
+  updatePatient,
   validateForm,
+  type DraftCondition,
   type EntryForm,
 } from '../../src/lib/client/entry'
+import { conditionsOf } from '../helpers/log-body'
 import { CONTRACT_DEFAULTS } from '../../src/lib/client/preferences'
 import { dailyLogRequestSchema, type DailyLog } from '../../src/lib/contract/api'
 import {
@@ -34,8 +46,23 @@ import {
 
 const TODAY = '2026-10-07'
 
-function formWith(conditions: EntryForm['conditions']): EntryForm {
-  return { logDate: TODAY, newPatients: 3, followUpPatients: 4, conditions }
+/**
+ * A day with 3 new and 4 returning patients, the given conditions all on the
+ * first new patient. The counts are derived from the patient list rather than
+ * set beside it, so this is the same shape the count picker produces.
+ */
+function formWith(conditions: DraftCondition[]): EntryForm {
+  let form: EntryForm = {
+    logDate: TODAY,
+    patients: [{ ...newDraftPatient('NEW'), conditions }],
+  }
+  form = setPatientCount(form, 'NEW', 3)
+  return setPatientCount(form, 'FOLLOW_UP', 4)
+}
+
+/** A day holding exactly one patient, carrying the given conditions. */
+function onePatientWith(conditions: DraftCondition[]): EntryForm {
+  return { logDate: TODAY, patients: [{ ...newDraftPatient('NEW'), conditions }] }
 }
 
 describe('newDraftCondition', () => {
@@ -53,7 +80,7 @@ describe('newDraftCondition', () => {
     const a = newDraftCondition('MENTAL_HEALTH', 'MH_ANXIETY', CONTRACT_DEFAULTS)
     const b = newDraftCondition('MENTAL_HEALTH', 'MH_ANXIETY', CONTRACT_DEFAULTS)
     expect(a.key).not.toBe(b.key)
-    const [sent] = toDailyLogRequest(formWith([a, b])).conditions
+    const [sent] = conditionsOf(toDailyLogRequest(formWith([a, b])))
     expect(sent).not.toHaveProperty('key')
   })
 })
@@ -67,7 +94,7 @@ describe('toDailyLogRequest', () => {
       conditionOther: 'left over text',
     }
     const body = toDailyLogRequest(formWith([condition]))
-    expect(Object.keys(body.conditions[0])).not.toContain('conditionOther')
+    expect(Object.keys(conditionsOf(body)[0])).not.toContain('conditionOther')
     expect(dailyLogRequestSchema.safeParse(body).success).toBe(true)
   })
 
@@ -77,7 +104,7 @@ describe('toDailyLogRequest', () => {
       conditionOther: '  chronic fatigue  ',
     }
     const body = toDailyLogRequest(formWith([condition]))
-    expect(body.conditions[0].conditionOther).toBe('chronic fatigue')
+    expect(conditionsOf(body)[0].conditionOther).toBe('chronic fatigue')
     expect(dailyLogRequestSchema.safeParse(body).success).toBe(true)
   })
 
@@ -93,11 +120,14 @@ describe('toDailyLogRequest', () => {
     )
 
     expect(Object.keys(body).sort()).toEqual([
-      'conditions',
       'followUpPatients',
       'newPatients',
+      'patients',
     ])
-    expect(Object.keys(body.conditions[0]).sort()).toEqual([
+    // A patient carries a type and what was treated — nothing about who they
+    // are, not even a client-side ordering hint.
+    expect(Object.keys(body.patients[0]).sort()).toEqual(['conditions', 'patientType'])
+    expect(Object.keys(conditionsOf(body)[0]).sort()).toEqual([
       'alsoSeeingGp',
       'category',
       'conditionCode',
@@ -107,6 +137,10 @@ describe('toDailyLogRequest', () => {
     // Nothing that could identify a patient, and no logDate — the date is in
     // the URL, which keeps the upsert key in one place.
     expect(JSON.stringify(body)).not.toMatch(/patient(Name|Ref)|idNumber|dob|notes/i)
+    // Seven patients were counted, so seven patient entries are sent — the
+    // two counts and the list are the same fact, and the server rejects them
+    // when they disagree.
+    expect(body.patients).toHaveLength(body.newPatients + body.followUpPatients)
   })
 
   it('round-trips a saved day back into an identical payload', () => {
@@ -132,28 +166,107 @@ describe('toDailyLogRequest', () => {
       newPatients: 2,
       followUpPatients: 5,
       totalPatients: 7,
-      conditions: [
+      patients: [
         {
-          id: 'ce_1',
-          category: 'COMMUNICABLE',
-          conditionCode: 'CD_TB',
-          conditionOther: null,
-          diagnosisBasis: 'CLINICAL_DIAGNOSIS',
-          alsoSeeingGp: 'YES',
-          referredByGp: 'YES',
+          id: 'pe_1',
+          patientType: 'NEW',
+          position: 1,
+          conditions: [
+            {
+              id: 'ce_1',
+              category: 'COMMUNICABLE',
+              conditionCode: 'CD_TB',
+              conditionOther: null,
+              diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+              alsoSeeingGp: 'YES',
+              referredByGp: 'YES',
+            },
+          ],
         },
+        { id: 'pe_2', patientType: 'NEW', position: 2, conditions: [] },
+        ...Array.from({ length: 5 }, (_, i) => ({
+          id: `pe_f${i + 1}`,
+          patientType: 'FOLLOW_UP' as const,
+          position: i + 1,
+          conditions: [],
+        })),
       ],
       createdAt: '2026-10-07T18:00:00.000Z',
       updatedAt: '2026-10-07T18:00:00.000Z',
     }
     const form = formFromDailyLog(log)
-    expect(form.conditions[0].conditionOther).toBe('')
-    expect(form.newPatients).toBe(2)
+    expect(allConditions(form)[0].conditionOther).toBe('')
+    expect(countOf(form, 'NEW')).toBe(2)
     expect(totalPatients(form)).toBe(log.totalPatients)
     // And editing it back out must not resurrect the null as free text.
-    expect(Object.keys(toDailyLogRequest(form).conditions[0])).not.toContain(
+    expect(Object.keys(conditionsOf(toDailyLogRequest(form))[0])).not.toContain(
       'conditionOther',
     )
+  })
+
+  it('keeps each stored patient separate, with their own conditions', () => {
+    const log: DailyLog = {
+      id: 'log_2',
+      logDate: TODAY,
+      newPatients: 2,
+      followUpPatients: 0,
+      totalPatients: 2,
+      patients: [
+        {
+          id: 'pe_1',
+          patientType: 'NEW',
+          position: 1,
+          conditions: [
+            {
+              id: 'ce_1',
+              category: 'COMMUNICABLE',
+              conditionCode: 'CD_TB',
+              conditionOther: null,
+              diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+              alsoSeeingGp: 'YES',
+              referredByGp: 'YES',
+            },
+            {
+              id: 'ce_2',
+              category: 'MENTAL_HEALTH',
+              conditionCode: 'MH_ANXIETY',
+              conditionOther: null,
+              diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+              alsoSeeingGp: 'YES',
+              referredByGp: 'YES',
+            },
+          ],
+        },
+        { id: 'pe_2', patientType: 'NEW', position: 2, conditions: [] },
+      ],
+      createdAt: '2026-10-07T18:00:00.000Z',
+      updatedAt: '2026-10-07T18:00:00.000Z',
+    }
+    const form = formFromDailyLog(log)
+    expect(form.patients.map((patient) => patient.conditions.length)).toEqual([2, 0])
+    // Reopening a day and saving it again must send back what was stored.
+    expect(toDailyLogRequest(form).patients).toEqual([
+      {
+        patientType: 'NEW',
+        conditions: [
+          {
+            category: 'COMMUNICABLE',
+            conditionCode: 'CD_TB',
+            diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+            alsoSeeingGp: 'YES',
+            referredByGp: 'YES',
+          },
+          {
+            category: 'MENTAL_HEALTH',
+            conditionCode: 'MH_ANXIETY',
+            diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+            alsoSeeingGp: 'YES',
+            referredByGp: 'YES',
+          },
+        ],
+      },
+      { patientType: 'NEW', conditions: [] },
+    ])
   })
 })
 
@@ -183,11 +296,145 @@ describe('validateForm', () => {
     expect(validateForm(formWith([condition])).ok).toBe(false)
   })
 
-  it('rejects counts the contract rejects', () => {
-    expect(validateForm({ ...emptyForm(TODAY), newPatients: 201 }).ok).toBe(false)
-    expect(validateForm({ ...emptyForm(TODAY), followUpPatients: -1 }).ok).toBe(false)
-    expect(validateForm({ ...emptyForm(TODAY), newPatients: 1.5 }).ok).toBe(false)
-    expect(validateForm({ ...emptyForm(TODAY), newPatients: 200 }).ok).toBe(true)
+  it('rejects a day with more patients than the contract allows', () => {
+    expect(validateForm(setPatientCount(emptyForm(TODAY), 'NEW', 200)).ok).toBe(true)
+    expect(validateForm(setPatientCount(emptyForm(TODAY), 'NEW', 201)).ok).toBe(false)
+  })
+})
+
+describe('setPatientCount', () => {
+  it('creates a card per patient, so the counts can never disagree', () => {
+    const form = setPatientCount(setPatientCount(emptyForm(TODAY), 'NEW', 3), 'FOLLOW_UP', 2)
+    expect(countOf(form, 'NEW')).toBe(3)
+    expect(countOf(form, 'FOLLOW_UP')).toBe(2)
+    expect(totalPatients(form)).toBe(5)
+    const body = toDailyLogRequest(form)
+    expect(body.patients).toHaveLength(5)
+    expect(validateForm(form).ok).toBe(true)
+  })
+
+  it('trims from the end, so a mis-tap costs the newest card not the first', () => {
+    // The first card is where the work usually is: it is filled in first and
+    // it is the one still on screen when the picker is re-tapped.
+    const seeded = setPatientCount(emptyForm(TODAY), 'NEW', 3)
+    const first = seeded.patients[0]
+    const withWork = updatePatient(seeded, first.key, (patient) => ({
+      ...patient,
+      conditions: [newDraftCondition('MENTAL_HEALTH', 'MH_ANXIETY', CONTRACT_DEFAULTS)],
+    }))
+
+    const trimmed = setPatientCount(withWork, 'NEW', 1)
+    expect(trimmed.patients).toHaveLength(1)
+    expect(trimmed.patients[0].key).toBe(first.key)
+    expect(allConditions(trimmed)).toHaveLength(1)
+  })
+
+  it('leaves the other type alone', () => {
+    let form = setPatientCount(emptyForm(TODAY), 'NEW', 2)
+    form = setPatientCount(form, 'FOLLOW_UP', 3)
+    form = setPatientCount(form, 'NEW', 0)
+    expect(countOf(form, 'NEW')).toBe(0)
+    expect(patientsOfType(form, 'FOLLOW_UP')).toHaveLength(3)
+  })
+
+  it('cannot be driven negative or fractional by a stray input', () => {
+    expect(countOf(setPatientCount(emptyForm(TODAY), 'NEW', -1), 'NEW')).toBe(0)
+    expect(countOf(setPatientCount(emptyForm(TODAY), 'NEW', 1.7), 'NEW')).toBe(1)
+  })
+})
+
+describe('resolveOpenPatient', () => {
+  const threeNew = () => setPatientCount(emptyForm(TODAY), 'NEW', 3)
+
+  it('opens the first card before anything has been asked for', () => {
+    // Otherwise setting a count lands the practitioner on a list of collapsed
+    // rows, costing a tap the always-expanded layout did not.
+    const form = threeNew()
+    expect(resolveOpenPatient(form, null)).toBe(form.patients[0].key)
+  })
+
+  it('opens nothing when there are no patients yet', () => {
+    expect(resolveOpenPatient(emptyForm(TODAY), null)).toBeNull()
+  })
+
+  it('opens the card that was asked for', () => {
+    const form = threeNew()
+    expect(resolveOpenPatient(form, form.patients[2].key)).toBe(form.patients[2].key)
+  })
+
+  it('keeps everything collapsed once the open card is closed', () => {
+    // This is why the request cannot just go back to null: that would spring
+    // the first card open again the moment the practitioner closed one.
+    const form = threeNew()
+    expect(resolveOpenPatient(form, COLLAPSED)).toBeNull()
+  })
+
+  it('collapses rather than jumping when the open card is removed', () => {
+    const form = threeNew()
+    const last = form.patients[2].key
+    const trimmed = setPatientCount(form, 'NEW', 1)
+    expect(resolveOpenPatient(trimmed, last)).toBeNull()
+  })
+
+  it('collapses when the keys belong to a different day', () => {
+    // Loading another date regenerates every draft key, so a stale request
+    // must not resolve onto whichever patient happens to sit in that slot.
+    const stale = threeNew().patients[0].key
+    const other = setPatientCount(emptyForm('2026-10-08'), 'NEW', 3)
+    expect(resolveOpenPatient(other, stale)).toBeNull()
+  })
+
+  it('spans both sections, so a returning patient closes an open new one', () => {
+    let form = setPatientCount(emptyForm(TODAY), 'NEW', 2)
+    form = setPatientCount(form, 'FOLLOW_UP', 2)
+    const returning = patientsOfType(form, 'FOLLOW_UP')[0].key
+    const open = resolveOpenPatient(form, returning)
+    expect(open).toBe(returning)
+    expect(patientsOfType(form, 'NEW').some((p) => p.key === open)).toBe(false)
+  })
+})
+
+describe('nextOpenRequest', () => {
+  it('opens a card that is not the open one', () => {
+    expect(nextOpenRequest('a', 'b')).toBe('b')
+  })
+
+  it('closes the card that is already open', () => {
+    expect(nextOpenRequest('a', 'a')).toBe(COLLAPSED)
+  })
+
+  it('closes the first card when it is open by default rather than by request', () => {
+    // The tap is resolved against the card that *is* open, not the request
+    // that produced it, or tapping the auto-opened first card would re-open it.
+    const form = setPatientCount(emptyForm(TODAY), 'NEW', 3)
+    const open = resolveOpenPatient(form, null)
+    expect(open).not.toBeNull()
+    const request = nextOpenRequest(open, form.patients[0].key)
+    expect(resolveOpenPatient(form, request)).toBeNull()
+  })
+})
+
+describe('firstFailingPatient', () => {
+  it('finds the patient holding a rejected condition', () => {
+    // A collapsed card hides the field the error message is about, so the
+    // submit handler uses this to open the one the practitioner must fix.
+    let form = setPatientCount(emptyForm(TODAY), 'NEW', 3)
+    const second = form.patients[1]
+    form = updatePatient(form, second.key, (patient) => ({
+      ...patient,
+      conditions: [
+        newDraftCondition('COMMUNICABLE', 'COMMUNICABLE__OTHER', CONTRACT_DEFAULTS),
+      ],
+    }))
+
+    const validation = validateForm(form)
+    expect(validation.ok).toBe(false)
+    expect(firstFailingPatient(form, validation.conditionErrors)?.key).toBe(second.key)
+  })
+
+  it('is null when nothing failed', () => {
+    const form = setPatientCount(emptyForm(TODAY), 'NEW', 2)
+    expect(firstFailingPatient(form, {})).toBeNull()
   })
 })
 
@@ -252,15 +499,15 @@ describe('deriveDefaults', () => {
 })
 
 describe('isEmptyEntry', () => {
-  it('is true only for a day with no counts and no conditions', () => {
+  it('is true only for a day with nobody on it', () => {
     expect(isEmptyEntry(emptyForm(TODAY))).toBe(true)
-    expect(isEmptyEntry({ ...emptyForm(TODAY), newPatients: 1 })).toBe(false)
-    expect(isEmptyEntry({ ...emptyForm(TODAY), followUpPatients: 1 })).toBe(false)
+    expect(isEmptyEntry(setPatientCount(emptyForm(TODAY), 'NEW', 1))).toBe(false)
+    expect(isEmptyEntry(setPatientCount(emptyForm(TODAY), 'FOLLOW_UP', 1))).toBe(false)
+    // A patient with nothing itemised is still a record: they were seen.
     expect(
-      isEmptyEntry({
-        ...emptyForm(TODAY),
-        conditions: [newDraftCondition('MENTAL_HEALTH', 'MH_ANXIETY', CONTRACT_DEFAULTS)],
-      }),
+      isEmptyEntry(
+        onePatientWith([newDraftCondition('MENTAL_HEALTH', 'MH_ANXIETY', CONTRACT_DEFAULTS)]),
+      ),
     ).toBe(false)
   })
 })
@@ -284,11 +531,10 @@ describe('shouldReplaceForm', () => {
     expect(shouldReplaceForm(formWith([]), true)).toBe(true)
   })
 
-  it('counts conditions alone as a real record', () => {
-    const loaded = {
-      ...emptyForm(TODAY),
-      conditions: [newDraftCondition('MENTAL_HEALTH', 'MH_ANXIETY', CONTRACT_DEFAULTS)],
-    }
+  it('counts a single patient as a real record', () => {
+    const loaded = onePatientWith([
+      newDraftCondition('MENTAL_HEALTH', 'MH_ANXIETY', CONTRACT_DEFAULTS),
+    ])
     expect(shouldReplaceForm(loaded, true)).toBe(true)
   })
 })

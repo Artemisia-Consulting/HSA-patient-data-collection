@@ -1,57 +1,91 @@
 /**
- * POST /api/auth/researcher — quick researcher auth via a shared code.
+ * POST /api/auth/researcher — researcher sign-in via a shared code.
  *
- * This is a stopgap: the real researcher auth will be proper SSO or invite
- * tokens before go-live. For now, the HSA team uses a shared code
- * (RESEARCHER_CODE env var, default "HSA4Life123") to access the dashboard.
+ * This is a development stopgap, kept deliberately simple. Practitioners sign
+ * in with Google (see `src/lib/server/googleAuth.ts`); the HSA research team
+ * uses a shared code until they are issued proper accounts.
  *
- * The endpoint looks up the first practitioner with role=RESEARCHER and
- * creates a session for them. No new account is created.
+ * "Temporary" is not a reason to ship it open, so three things are enforced:
  *
- * OWNERSHIP: Integration lead (post-merge addition).
+ *  - In production the route refuses to run unless RESEARCHER_CODE is set,
+ *    exactly as the dispatch route refuses without CRON_SECRET. It previously
+ *    fell back to a default that was committed to the repository, which meant
+ *    anyone who read the source could export the whole dataset.
+ *  - The comparison is constant-time. A plain `!==` leaks the code prefix by
+ *    prefix to anyone who can measure the response.
+ *  - It is rate limited like the other unauthenticated routes, so the code
+ *    cannot simply be guessed at speed.
+ *
+ * OWNERSHIP: Integration lead.
  */
 import { type NextResponse } from 'next/server'
+import { z } from 'zod'
 
-import { prisma } from '@/lib/db'
-import { attachSession, createSession } from '@/lib/server/auth'
-import { ApiException, withRoute } from '@/lib/server/errors'
-import { jsonResponse } from '@/lib/server/http'
-import { toAuthSessionResponse } from '@/lib/server/serialise'
 import { authSessionResponseSchema } from '@/lib/contract'
-
-const RESEARCHER_CODE = process.env.RESEARCHER_CODE ?? 'HSA4Life123'
+import { prisma } from '@/lib/db'
+import { attachSession, createSession, safeCompare } from '@/lib/server/auth'
+import { errorResponse, readJsonBody, validationError, withRoute } from '@/lib/server/errors'
+import { clientIp, jsonResponse } from '@/lib/server/http'
+import { RATE_LIMITS, consumeRateLimit } from '@/lib/server/rateLimit'
+import { toAuthSessionResponse } from '@/lib/server/serialise'
 
 export const dynamic = 'force-dynamic'
 
-const researcherSignupRequestSchema = {
-  parse: (body: unknown) => {
-    if (typeof body !== 'object' || body === null) {
-      throw new ApiException('VALIDATION_FAILED', 'Invalid request')
-    }
-    const { code } = body as { code?: unknown }
-    if (typeof code !== 'string' || code.length === 0) {
-      throw new ApiException('VALIDATION_FAILED', 'Code is required')
-    }
-    return { code }
-  },
+/** Dev-only convenience value. Never reachable when NODE_ENV is production. */
+const DEV_FALLBACK_CODE = 'hsa-dev-researcher'
+
+const researcherCodeSchema = z.object({
+  code: z.string().min(1, 'Enter the researcher code'),
+})
+
+/** The expected code, or null when this deployment has not configured one. */
+function expectedCode(): string | null {
+  const configured = process.env.RESEARCHER_CODE?.trim()
+  if (configured) return configured
+  return process.env.NODE_ENV === 'production' ? null : DEV_FALLBACK_CODE
 }
 
 export const POST = withRoute(async (request: Request): Promise<NextResponse> => {
-  const body = await request.json().catch(() => {
-    throw new ApiException('VALIDATION_FAILED', 'Invalid JSON')
-  })
-  const { code } = researcherSignupRequestSchema.parse(body)
-
-  if (code !== RESEARCHER_CODE) {
-    throw new ApiException('FORBIDDEN', 'Invalid researcher code')
+  const limit = consumeRateLimit(
+    `researcher:${clientIp(request)}`,
+    RATE_LIMITS.researcher.limit,
+    RATE_LIMITS.researcher.windowMs,
+  )
+  if (!limit.allowed) {
+    return errorResponse('RATE_LIMITED', 'Too many attempts. Please try again shortly.')
   }
 
+  const expected = expectedCode()
+  if (!expected) {
+    console.error('[auth] RESEARCHER_CODE is not set; refusing researcher sign-in')
+    return errorResponse(
+      'FORBIDDEN',
+      'Researcher sign-in is not configured on this deployment.',
+    )
+  }
+
+  const parsed = researcherCodeSchema.safeParse(await readJsonBody(request))
+  if (!parsed.success) return validationError(parsed.error)
+
+  if (!safeCompare(parsed.data.code, expected)) {
+    return errorResponse('FORBIDDEN', 'That code is not recognised.', {
+      code: ['Incorrect researcher code'],
+    })
+  }
+
+  // Oldest researcher, deterministically. `findFirst` with no ordering picked an
+  // arbitrary row, so with two researcher accounts the identity you got back
+  // depended on storage order.
   const researcher = await prisma.practitioner.findFirst({
     where: { role: 'RESEARCHER' },
+    orderBy: { createdAt: 'asc' },
   })
 
   if (!researcher) {
-    throw new ApiException('NOT_FOUND', 'No researcher account exists')
+    return errorResponse(
+      'NOT_FOUND',
+      'No researcher account exists on this deployment yet.',
+    )
   }
 
   const { token, expiresAt } = await createSession(researcher.id)

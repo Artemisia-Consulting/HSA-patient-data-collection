@@ -36,6 +36,21 @@ export const CONDITION_CATEGORY_LABELS: Record<ConditionCategory, string> = {
 }
 
 /* ------------------------------------------------------------------ *
+ * Patient type (FR3)
+ *
+ * Every condition is recorded against a patient, and every patient is one of
+ * these two. The day's counts decide how many of each the form asks about.
+ * ------------------------------------------------------------------ */
+
+export const PATIENT_TYPES = ['NEW', 'FOLLOW_UP'] as const
+export type PatientType = (typeof PATIENT_TYPES)[number]
+
+export const PATIENT_TYPE_LABELS: Record<PatientType, string> = {
+  NEW: 'New',
+  FOLLOW_UP: 'Returning',
+}
+
+/* ------------------------------------------------------------------ *
  * Diagnosis basis (FR5)
  * ------------------------------------------------------------------ */
 
@@ -47,10 +62,16 @@ export const DIAGNOSIS_BASES = [
 
 export type DiagnosisBasis = (typeof DIAGNOSIS_BASES)[number]
 
+/**
+ * The question the form asks above these options. Kept beside the labels so the
+ * wording and the values it produces can never drift apart.
+ */
+export const DIAGNOSIS_BASIS_QUESTION = 'How did you arrive at diagnosis?'
+
 export const DIAGNOSIS_BASIS_LABELS: Record<DiagnosisBasis, string> = {
-  CLINICAL_DIAGNOSIS: 'My clinical diagnosis',
-  PATIENT_REPORTED_PRIOR: 'Patient-reported prior diagnosis',
-  PRESENTING_COMPLAINT_ONLY: 'Presenting complaint / symptom picture only',
+  CLINICAL_DIAGNOSIS: 'My diagnosis',
+  PATIENT_REPORTED_PRIOR: 'Patient-reported',
+  PRESENTING_COMPLAINT_ONLY: 'Complaint only',
 }
 
 /**
@@ -62,6 +83,17 @@ export const DEFAULT_DIAGNOSIS_BASIS: DiagnosisBasis = 'CLINICAL_DIAGNOSIS'
 /* ------------------------------------------------------------------ *
  * Referral / co-management (FR6)
  * ------------------------------------------------------------------ */
+
+/**
+ * The column names still say "Gp" because they are the stable keys the dataset
+ * and the CSV export are written in; the questions practitioners actually read
+ * say "conventional medical practitioner", which is what the product owner
+ * asked for and what a homeopath would recognise.
+ */
+export const ALSO_SEEING_GP_QUESTION =
+  'Is the patient also seeing a conventional medical practitioner for this?'
+export const REFERRED_BY_GP_QUESTION =
+  'Was the patient referred by a conventional medical practitioner?'
 
 export const GP_CO_MANAGEMENT = ['YES', 'NO', 'UNSURE'] as const
 export type GpCoManagement = (typeof GP_CO_MANAGEMENT)[number]
@@ -124,6 +156,7 @@ export type Role = (typeof ROLES)[number]
  * ------------------------------------------------------------------ */
 
 export const conditionCategorySchema = z.enum(CONDITION_CATEGORIES)
+export const patientTypeSchema = z.enum(PATIENT_TYPES)
 export const diagnosisBasisSchema = z.enum(DIAGNOSIS_BASES)
 export const gpCoManagementSchema = z.enum(GP_CO_MANAGEMENT)
 export const referredByGpSchema = z.enum(REFERRED_BY_GP)

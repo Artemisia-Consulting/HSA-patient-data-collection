@@ -13,17 +13,36 @@ import {
   type AuthSessionResponse,
   type ConditionEntryInput,
   type DailyLog as DailyLogResponse,
+  type PatientEntry as PatientEntryResponse,
   type Practitioner as PractitionerResponse,
 } from '@/lib/contract'
 import type {
   ConditionEntry,
   DailyLog,
+  PatientEntry,
   Practitioner,
+  Prisma,
 } from '@/generated/prisma'
 
 import { appUrl, isoString, isoStringOrNull } from './http'
 
-export type DailyLogWithConditions = DailyLog & { conditions: ConditionEntry[] }
+export type PatientWithConditions = PatientEntry & { conditions: ConditionEntry[] }
+export type DailyLogWithPatients = DailyLog & { patients: PatientWithConditions[] }
+
+/**
+ * The include every daily-log read uses, so the form always gets its patients
+ * back in the order it drew them: New before Returning, then by position.
+ *
+ * `patientType: 'desc'` is what puts NEW first — the two values sort that way
+ * alphabetically, and a database-side sort is worth the small indirection
+ * because it keeps paging and the CSV in the same order as the form.
+ */
+export const LOG_PATIENT_INCLUDE = {
+  patients: {
+    orderBy: [{ patientType: 'desc' }, { position: 'asc' }],
+    include: { conditions: { orderBy: { createdAt: 'asc' } } },
+  },
+} satisfies Prisma.DailyLogInclude
 
 /**
  * The practitioner's own record, returned only to that practitioner. Includes
@@ -86,14 +105,25 @@ export function toConditionEntryResponse(entry: ConditionEntry) {
   }
 }
 
-export function toDailyLogResponse(log: DailyLogWithConditions): DailyLogResponse {
+export function toPatientEntryResponse(
+  patient: PatientWithConditions,
+): PatientEntryResponse {
+  return {
+    id: patient.id,
+    patientType: patient.patientType as PatientEntryResponse['patientType'],
+    position: patient.position,
+    conditions: patient.conditions.map(toConditionEntryResponse),
+  }
+}
+
+export function toDailyLogResponse(log: DailyLogWithPatients): DailyLogResponse {
   return {
     id: log.id,
     logDate: log.logDate,
     newPatients: log.newPatients,
     followUpPatients: log.followUpPatients,
     totalPatients: log.newPatients + log.followUpPatients,
-    conditions: log.conditions.map(toConditionEntryResponse),
+    patients: log.patients.map(toPatientEntryResponse),
     createdAt: isoString(log.createdAt),
     updatedAt: isoString(log.updatedAt),
   }

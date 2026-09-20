@@ -4,6 +4,7 @@
  * OWNER: Stream 2.
  */
 export * as api from './api'
+export type { DashboardQuery } from './api'
 export {
   ApiClientError,
   ApiNetworkError,

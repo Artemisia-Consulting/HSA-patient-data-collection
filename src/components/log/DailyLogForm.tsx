@@ -1,21 +1,32 @@
 'use client'
 
 /**
- * The core screen (FR3–FR6, user stories 2.3–2.6). Everything here is in
- * service of one number: under 30 seconds, under 10 for a returning user.
+ * The core screen (FR3–FR6, user stories 2.3–2.6).
  *
- * Where the time goes, and what each choice buys:
+ * The shape of the entry follows the day: say how many patients were new and
+ * how many were returning, then fill in what each of them presented with. The
+ * counts are not a summary written beside the detail — they *are* the detail's
+ * structure, because setting "New patients" to 4 is what puts four patient
+ * cards on the screen. That is what makes the dataset able to answer "how many
+ * patients presented with more than one condition?", which a day-level list of
+ * conditions could not express at all.
+ *
+ * A full day is now a couple of minutes rather than thirty seconds, which is
+ * the deliberate trade. What is still protected is the cost of each *step*:
  *
  *  - Date is already right (server-side SAST) — 0 taps.
  *  - Counts are a 0–9 grid — 1 tap each, not eight on a stepper.
  *  - Category then condition is 2 taps, no typing, because the list is
  *    rank-ordered and open by default.
- *  - The three flags are already set to the practitioner's own remembered
- *    values — 0 taps, visible without opening anything.
+ *  - Exactly one patient card is expanded at a time, so moving to the next
+ *    patient is 1 tap and the one you are on is never lost in the list.
+ *  - The three questions are already answered with the practitioner's own
+ *    remembered values — 0 taps, visible without opening anything.
  *  - Submit is one tap on a bar that never scrolls away.
  *
- * That is 7 taps for a two-condition day. The tap-by-tap walkthrough is in
- * docs/streams/frontend.md.
+ * A patient card left untouched is a valid record: somebody was seen and their
+ * conditions were not itemised. Nothing on a card is required, so a busy day
+ * can still be filed in seconds by setting two counts and submitting.
  *
  * Two failure paths are handled rather than assumed away: a submit that cannot
  * reach the server is written to the outbox and replayed (so the day is not
@@ -29,8 +40,7 @@ import Link from 'next/link'
 
 import { Button } from '@/components/ui/Button'
 import { CountPicker } from '@/components/ui/CountPicker'
-import { ConditionPicker } from '@/components/log/ConditionPicker'
-import { SelectedConditionCard } from '@/components/log/SelectedConditionCard'
+import { PatientCard } from '@/components/log/PatientCard'
 import { DateField } from '@/components/log/DateField'
 import { useOnline } from '@/components/session/useOnline'
 import {
@@ -50,20 +60,32 @@ import {
   type EntryDefaults,
 } from '@/lib/client'
 import {
+  allConditions,
+  countOf,
   deriveDefaults,
   emptyForm,
+  firstFailingPatient,
   formFromDailyLog,
   formFromRequest,
   newDraftCondition,
+  nextOpenRequest,
+  patientsOfType,
+  resolveOpenPatient,
+  setPatientCount,
   shouldReplaceForm,
   toDailyLogRequest,
   totalPatients,
+  updatePatient,
   validateForm,
   type DraftCondition,
   type EntryForm,
 } from '@/lib/client/entry'
 import type { TaxonomyResponse } from '@/lib/contract/api'
-import type { ConditionCategory } from '@/lib/contract/enums'
+import {
+  PATIENT_TYPE_LABELS,
+  type ConditionCategory,
+  type PatientType,
+} from '@/lib/contract/enums'
 import { formatLogDateLong } from '@/lib/dates'
 
 type SubmitState =
@@ -97,6 +119,13 @@ export function DailyLogForm({
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitState, setSubmitState] = useState<SubmitState>({ kind: 'editing' })
   const [wasExisting, setWasExisting] = useState(false)
+
+  /**
+   * What the practitioner last asked to have open. `resolveOpenPatient` turns
+   * it into the card that actually is — see the note on it for why the two are
+   * not the same thing.
+   */
+  const [openRequest, setOpenRequest] = useState<string | null>(null)
 
   const confirmationRef = useRef<HTMLDivElement | null>(null)
 
@@ -155,6 +184,7 @@ export function DailyLogForm({
       setConditionErrors({})
       setSubmitError(null)
       setSubmitState({ kind: 'editing' })
+      setOpenRequest(null)
 
       /** The one place a loaded day reaches the form. See shouldReplaceForm. */
       const applyLoaded = (next: EntryForm, existing: boolean) => {
@@ -235,6 +265,11 @@ export function DailyLogForm({
 
   const categories = taxonomy?.categories ?? []
 
+  const openPatientKey = useMemo(
+    () => resolveOpenPatient(form, openRequest),
+    [form, openRequest],
+  )
+
   const labelForCode = useMemo(() => {
     const map = new Map<string, string>()
     for (const category of categories) {
@@ -243,55 +278,59 @@ export function DailyLogForm({
     return map
   }, [categories])
 
-  const selectedCodes = useMemo(
-    () => new Set(form.conditions.map((condition) => condition.conditionCode)),
-    [form.conditions],
-  )
-
   /* ---------------- mutations ---------------- */
 
+  const setCount = useCallback((patientType: PatientType, count: number) => {
+    editForm((current) => setPatientCount(current, patientType, count))
+  }, [])
+
   const toggleCondition = useCallback(
-    (category: ConditionCategory, code: string) => {
-      editForm((current) => {
-        const existing = current.conditions.find((c) => c.conditionCode === code)
-        if (existing) {
+    (patientKey: string, category: ConditionCategory, code: string) => {
+      editForm((current) =>
+        updatePatient(current, patientKey, (patient) => {
+          const already = patient.conditions.some((c) => c.conditionCode === code)
           return {
-            ...current,
-            conditions: current.conditions.filter((c) => c.conditionCode !== code),
+            ...patient,
+            conditions: already
+              ? patient.conditions.filter((c) => c.conditionCode !== code)
+              : [
+                  ...patient.conditions,
+                  newDraftCondition(category, code, defaults ?? loadEntryDefaults()),
+                ],
           }
-        }
-        return {
-          ...current,
-          conditions: [
-            ...current.conditions,
-            newDraftCondition(category, code, defaults ?? loadEntryDefaults()),
-          ],
-        }
-      })
+        }),
+      )
     },
     [defaults],
   )
 
-  const patchCondition = useCallback((key: string, patch: Partial<DraftCondition>) => {
-    editForm((current) => ({
-      ...current,
-      conditions: current.conditions.map((condition) =>
-        condition.key === key ? { ...condition, ...patch } : condition,
-      ),
-    }))
-    setConditionErrors((current) => {
-      if (!current[key]) return current
-      const next = { ...current }
-      delete next[key]
-      return next
-    })
-  }, [])
+  const patchCondition = useCallback(
+    (patientKey: string, key: string, patch: Partial<DraftCondition>) => {
+      editForm((current) =>
+        updatePatient(current, patientKey, (patient) => ({
+          ...patient,
+          conditions: patient.conditions.map((condition) =>
+            condition.key === key ? { ...condition, ...patch } : condition,
+          ),
+        })),
+      )
+      setConditionErrors((current) => {
+        if (!current[key]) return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    },
+    [],
+  )
 
-  const removeCondition = useCallback((key: string) => {
-    editForm((current) => ({
-      ...current,
-      conditions: current.conditions.filter((condition) => condition.key !== key),
-    }))
+  const removeCondition = useCallback((patientKey: string, key: string) => {
+    editForm((current) =>
+      updatePatient(current, patientKey, (patient) => ({
+        ...patient,
+        conditions: patient.conditions.filter((condition) => condition.key !== key),
+      })),
+    )
   }, [])
 
   /* ---------------- submit ---------------- */
@@ -301,6 +340,10 @@ export function DailyLogForm({
     if (!validation.ok) {
       setConditionErrors(validation.conditionErrors)
       setSubmitError(validation.formError ?? 'Please fix the highlighted condition.')
+      // "Fix the highlighted condition" is useless if the card holding it is
+      // collapsed, so open the first patient that has a problem.
+      const failing = firstFailingPatient(form, validation.conditionErrors)
+      if (failing) setOpenRequest(failing.key)
       return
     }
     setConditionErrors({})
@@ -332,11 +375,9 @@ export function DailyLogForm({
       }
       if (error instanceof ApiClientError) {
         setSubmitState({ kind: 'editing' })
-        setSubmitError(
-          error.status === 422
-            ? `${error.message} Entries are accepted for 1–31 October.`
-            : error.message,
-        )
+        // The server's message already names the dates it will accept, which
+        // are no longer just October's — don't append a second, staler range.
+        setSubmitError(error.message)
         return
       }
       setSubmitState({ kind: 'editing' })
@@ -373,6 +414,51 @@ export function DailyLogForm({
   }
 
   /* ---------------- the form ---------------- */
+
+  /**
+   * One count picker and the patient cards it creates. Written as a function
+   * rather than a component so React keeps the same element identity across
+   * renders — a nested component defined in the body would remount every card
+   * on each keystroke and lose each picker's open state.
+   */
+  const renderSection = (patientType: PatientType, label: string, hint: string) => {
+    const rows = patientsOfType(form, patientType)
+    return (
+      <div className="space-y-2.5">
+        <CountPicker
+          label={label}
+          hint={hint}
+          value={rows.length}
+          onChange={(count) => setCount(patientType, count)}
+        />
+        {rows.length > 0 ? (
+          <ul className="space-y-2.5">
+            {rows.map((patient, index) => (
+              <PatientCard
+                key={patient.key}
+                patient={patient}
+                title={`${PATIENT_TYPE_LABELS[patientType]} patient ${index + 1}`}
+                open={patient.key === openPatientKey}
+                onToggle={() =>
+                  setOpenRequest(nextOpenRequest(openPatientKey, patient.key))
+                }
+                categories={categories}
+                labelForCode={labelForCode}
+                conditionErrors={conditionErrors}
+                onToggleCondition={(category, code) =>
+                  toggleCondition(patient.key, category, code)
+                }
+                onPatchCondition={(key, patch) =>
+                  patchCondition(patient.key, key, patch)
+                }
+                onRemoveCondition={(key) => removeCondition(patient.key, key)}
+              />
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <div className="pb-28">
@@ -413,54 +499,18 @@ export function DailyLogForm({
           </p>
         ) : null}
 
-        <CountPicker
-          label="New patients"
-          hint="Seen for the first time"
-          value={form.newPatients}
-          onChange={(newPatients) => editForm((current) => ({ ...current, newPatients }))}
-        />
-        <CountPicker
-          label="Follow-up patients"
-          hint="Returning for an existing case"
-          value={form.followUpPatients}
-          onChange={(followUpPatients) =>
-            editForm((current) => ({ ...current, followUpPatients }))
-          }
-        />
-
         {taxonomyError ? (
           <p className="rounded-xl bg-amber-100 px-3 py-2.5 text-sm text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
             {taxonomyError}
           </p>
         ) : null}
 
-        {categories.length > 0 ? (
-          <ConditionPicker
-            categories={categories}
-            selectedCodes={selectedCodes}
-            onToggle={toggleCondition}
-          />
-        ) : null}
-
-        {form.conditions.length > 0 ? (
-          <div>
-            <h2 className="mb-2 px-1 text-sm font-semibold text-neutral-600 dark:text-neutral-300">
-              Selected ({form.conditions.length})
-            </h2>
-            <ul className="space-y-2.5">
-              {form.conditions.map((condition) => (
-                <SelectedConditionCard
-                  key={condition.key}
-                  condition={condition}
-                  label={labelForCode.get(condition.conditionCode) ?? condition.conditionCode}
-                  error={conditionErrors[condition.key]}
-                  onChange={(patch) => patchCondition(condition.key, patch)}
-                  onRemove={() => removeCondition(condition.key)}
-                />
-              ))}
-            </ul>
-          </div>
-        ) : null}
+        {renderSection('NEW', 'New patients', 'Seen for the first time')}
+        {renderSection(
+          'FOLLOW_UP',
+          'Returning patients',
+          'Coming back for an existing case',
+        )}
 
         <p className="px-1 pt-1 text-xs text-neutral-500 dark:text-neutral-400">
           Counts and conditions only — never a patient’s name, ID or notes.{' '}
@@ -528,6 +578,7 @@ function Confirmation({
 }) {
   const queued = state.kind === 'queued'
   const practised = state.kind === 'practised'
+  const conditions = allConditions(form)
 
   return (
     <div
@@ -568,14 +619,14 @@ function Confirmation({
       </p>
 
       <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
-        <Stat label="New" value={form.newPatients} />
-        <Stat label="Follow-up" value={form.followUpPatients} />
+        <Stat label="New" value={countOf(form, 'NEW')} />
+        <Stat label="Returning" value={countOf(form, 'FOLLOW_UP')} />
         <Stat label="Total" value={totalPatients(form)} />
       </dl>
 
-      {form.conditions.length > 0 ? (
+      {conditions.length > 0 ? (
         <ul className="mt-3 flex flex-wrap justify-center gap-1.5">
-          {form.conditions.map((condition) => (
+          {conditions.map((condition) => (
             <li
               key={condition.key}
               className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"

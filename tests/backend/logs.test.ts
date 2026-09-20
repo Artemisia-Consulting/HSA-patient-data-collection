@@ -2,6 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { createPractitioner, initTestDb, issueSession, resetDb } from './helpers/db'
 import { apiRequest, dateParams, readJson, sessionCookieValue } from './helpers/request'
+import { conditionsOf, dayWith, logBody, patientWith } from '../helpers/log-body'
 
 import {
   apiErrorSchema,
@@ -25,7 +26,17 @@ const entry = {
   referredByGp: 'NO' as const,
 }
 
-const body = { newPatients: 4, followUpPatients: 6, conditions: [entry] }
+const body = dayWith({ newPatients: 4, followUpPatients: 6, conditions: [entry] })
+
+/**
+ * One new patient carrying exactly the conditions given. Typed loosely because
+ * several callers below deliberately send a condition the contract rejects.
+ */
+const oneNewPatientWith = (...conditions: unknown[]) => ({
+  newPatients: 1,
+  followUpPatients: 0,
+  patients: [{ patientType: 'NEW', conditions }],
+})
 
 beforeAll(async () => {
   await initTestDb()
@@ -76,11 +87,27 @@ describe('PUT /api/logs/:date — access and dates (FR3)', () => {
     expect(response.status).toBe(400)
   })
 
-  it('422s for a date before the collection window', async () => {
+  /**
+   * A day before the collection opens is saved like any other. It is not part
+   * of the research — it is there so the app can be used for real during
+   * development and training — and it is cleared out by logDate before the
+   * study starts, so nothing marks it in the row itself.
+   */
+  it('accepts a date before the collection window opens', async () => {
     const { token } = await authed()
     const response = await putLog(
       apiRequest('/api/logs/2026-09-30', { method: 'PUT', body, token }),
       dateParams('2026-09-30'),
+    )
+    expect(response.status).toBe(201)
+    expect(await prisma.dailyLog.count({ where: { logDate: '2026-09-30' } })).toBe(1)
+  })
+
+  it('422s for a date before even the early-entry floor', async () => {
+    const { token } = await authed()
+    const response = await putLog(
+      apiRequest('/api/logs/2026-01-01', { method: 'PUT', body, token }),
+      dateParams('2026-01-01'),
     )
     expect(response.status).toBe(422)
     expect(apiErrorSchema.parse(await readJson(response)).error.code).toBe(
@@ -126,21 +153,43 @@ describe('PUT /api/logs/:date — body validation (FR3–FR6)', () => {
     ['counts above the cap', { ...body, newPatients: 201 }, 'newPatients'],
     ['fractional counts', { ...body, followUpPatients: 2.5 }, 'followUpPatients'],
     ['a count sent as a string', { ...body, newPatients: '4' }, 'newPatients'],
-    ['a missing count', { followUpPatients: 1, conditions: [] }, 'newPatients'],
+    ['a missing count', { followUpPatients: 1, patients: [] }, 'newPatients'],
     [
       'an unknown diagnosis basis',
-      { ...body, conditions: [{ ...entry, diagnosisBasis: 'GUESSWORK' }] },
-      'conditions.0.diagnosisBasis',
+      oneNewPatientWith({ ...entry, diagnosisBasis: 'GUESSWORK' }),
+      'patients.0.conditions.0.diagnosisBasis',
     ],
     [
       'an unknown category',
-      { ...body, conditions: [{ ...entry, category: 'DENTAL' }] },
-      'conditions.0.category',
+      oneNewPatientWith({ ...entry, category: 'DENTAL' }),
+      'patients.0.conditions.0.category',
     ],
     [
       'an unknown co-management answer',
-      { ...body, conditions: [{ ...entry, alsoSeeingGp: 'MAYBE' }] },
-      'conditions.0.alsoSeeingGp',
+      oneNewPatientWith({ ...entry, alsoSeeingGp: 'MAYBE' }),
+      'patients.0.conditions.0.alsoSeeingGp',
+    ],
+    [
+      'an unknown patient type',
+      { newPatients: 1, followUpPatients: 0, patients: [{ patientType: 'WALK_IN', conditions: [] }] },
+      'patients.0.patientType',
+    ],
+    // The counts and the patient list are the same fact stated twice, and the
+    // export is only trustworthy if they always agree.
+    [
+      'more patients than the count claims',
+      { newPatients: 1, followUpPatients: 0, patients: [patientWith('NEW'), patientWith('NEW')] },
+      'patients',
+    ],
+    [
+      'fewer patients than the count claims',
+      { newPatients: 0, followUpPatients: 3, patients: [patientWith('FOLLOW_UP')] },
+      'patients',
+    ],
+    [
+      'patients of the wrong type for the counts',
+      { newPatients: 1, followUpPatients: 0, patients: [patientWith('FOLLOW_UP')] },
+      'patients',
     ],
   ]
 
@@ -156,12 +205,12 @@ describe('PUT /api/logs/:date — body validation (FR3–FR6)', () => {
     expect(Object.keys(parsed.error.fieldErrors ?? {})).toContain(field)
   })
 
-  it('rejects more than 40 conditions in one day', async () => {
+  it('rejects more than 20 conditions on one patient', async () => {
     const { token } = await authed()
     const response = await putLog(
       apiRequest(`/api/logs/${TODAY}`, {
         method: 'PUT',
-        body: { ...body, conditions: Array.from({ length: 41 }, () => entry) },
+        body: logBody([patientWith('NEW', Array.from({ length: 21 }, () => entry))]),
         token,
       }),
       dateParams(TODAY),
@@ -174,22 +223,19 @@ describe('PUT /api/logs/:date — body validation (FR3–FR6)', () => {
     const response = await putLog(
       apiRequest(`/api/logs/${TODAY}`, {
         method: 'PUT',
-        body: {
-          ...body,
-          conditions: [
-            {
-              ...entry,
-              conditionCode: otherConditionCode('MENTAL_HEALTH'),
-            },
-          ],
-        },
+        body: oneNewPatientWith({
+          ...entry,
+          conditionCode: otherConditionCode('MENTAL_HEALTH'),
+        }),
         token,
       }),
       dateParams(TODAY),
     )
     expect(response.status).toBe(400)
     const parsed = apiErrorSchema.parse(await readJson(response))
-    expect(parsed.error.fieldErrors?.['conditions.0.conditionOther']).toBeDefined()
+    expect(
+      parsed.error.fieldErrors?.['patients.0.conditions.0.conditionOther'],
+    ).toBeDefined()
   })
 
   it('rejects a condition code that is not in the taxonomy table', async () => {
@@ -197,14 +243,16 @@ describe('PUT /api/logs/:date — body validation (FR3–FR6)', () => {
     const response = await putLog(
       apiRequest(`/api/logs/${TODAY}`, {
         method: 'PUT',
-        body: { ...body, conditions: [{ ...entry, conditionCode: 'MH_MADE_UP' }] },
+        body: oneNewPatientWith({ ...entry, conditionCode: 'MH_MADE_UP' }),
         token,
       }),
       dateParams(TODAY),
     )
     expect(response.status).toBe(400)
     const parsed = apiErrorSchema.parse(await readJson(response))
-    expect(parsed.error.fieldErrors?.['conditions.0.conditionCode']).toBeDefined()
+    expect(
+      parsed.error.fieldErrors?.['patients.0.conditions.0.conditionCode'],
+    ).toBeDefined()
   })
 
   it('rejects a condition filed under the wrong category', async () => {
@@ -212,17 +260,18 @@ describe('PUT /api/logs/:date — body validation (FR3–FR6)', () => {
     const response = await putLog(
       apiRequest(`/api/logs/${TODAY}`, {
         method: 'PUT',
-        body: {
-          ...body,
-          conditions: [{ ...entry, category: 'COMMUNICABLE', conditionCode: 'MH_ANXIETY' }],
-        },
+        body: oneNewPatientWith({
+          ...entry,
+          category: 'COMMUNICABLE',
+          conditionCode: 'MH_ANXIETY',
+        }),
         token,
       }),
       dateParams(TODAY),
     )
     expect(response.status).toBe(400)
     const parsed = apiErrorSchema.parse(await readJson(response))
-    expect(parsed.error.fieldErrors?.['conditions.0.category']).toBeDefined()
+    expect(parsed.error.fieldErrors?.['patients.0.conditions.0.category']).toBeDefined()
   })
 
   it('rejects a condition that has been retired from the list', async () => {
@@ -249,17 +298,14 @@ describe('PUT /api/logs/:date — body validation (FR3–FR6)', () => {
     await putLog(
       apiRequest(`/api/logs/${TODAY}`, {
         method: 'PUT',
-        body: {
-          ...body,
-          conditions: [{ ...entry, conditionOther: 'Mrs J Smith, 7 Oak Rd' }],
-        },
+        body: oneNewPatientWith({ ...entry, conditionOther: 'Mrs J Smith, 7 Oak Rd' }),
         token,
       }),
       dateParams(TODAY),
     )
 
     const stored = await prisma.conditionEntry.findFirstOrThrow({
-      where: { dailyLog: { practitionerId: practitioner.id } },
+      where: { patientEntry: { dailyLog: { practitionerId: practitioner.id } } },
     })
     expect(stored.conditionOther).toBeNull()
   })
@@ -277,8 +323,57 @@ describe('PUT /api/logs/:date — upsert (FR3)', () => {
     const log = dailyLogSchema.parse(await readJson(response))
     expect(log.logDate).toBe(TODAY)
     expect(log.totalPatients).toBe(10)
-    expect(log.conditions).toHaveLength(1)
-    expect(log.conditions[0].conditionCode).toBe('MH_ANXIETY')
+    expect(log.patients).toHaveLength(10)
+    expect(conditionsOf(log)).toHaveLength(1)
+    expect(conditionsOf(log)[0].conditionCode).toBe('MH_ANXIETY')
+  })
+
+  it('stores each patient once, positioned within its own type', async () => {
+    const { token } = await authed()
+    const response = await putLog(
+      apiRequest(`/api/logs/${TODAY}`, {
+        method: 'PUT',
+        body: logBody([
+          patientWith('NEW', [entry]),
+          patientWith('FOLLOW_UP'),
+          patientWith('NEW'),
+        ]),
+        token,
+      }),
+      dateParams(TODAY),
+    )
+    expect(response.status).toBe(201)
+
+    const log = dailyLogSchema.parse(await readJson(response))
+    expect(log.newPatients).toBe(2)
+    expect(log.followUpPatients).toBe(1)
+    // Positions restart per type, and New comes back before Returning.
+    expect(log.patients.map((p) => [p.patientType, p.position])).toEqual([
+      ['NEW', 1],
+      ['NEW', 2],
+      ['FOLLOW_UP', 1],
+    ])
+  })
+
+  it('keeps two conditions on one patient together (the point of the model)', async () => {
+    const { token } = await authed()
+    const response = await putLog(
+      apiRequest(`/api/logs/${TODAY}`, {
+        method: 'PUT',
+        body: logBody([
+          patientWith('NEW', [
+            entry,
+            { ...entry, category: 'COMMUNICABLE', conditionCode: 'CD_TB' },
+          ]),
+          patientWith('NEW', [{ ...entry, conditionCode: 'MH_DEPRESSION' }]),
+        ]),
+        token,
+      }),
+      dateParams(TODAY),
+    )
+
+    const log = dailyLogSchema.parse(await readJson(response))
+    expect(log.patients.map((p) => p.conditions.length)).toEqual([2, 1])
   })
 
   it('updates with 200 and keeps one row per practitioner per day', async () => {
@@ -291,14 +386,12 @@ describe('PUT /api/logs/:date — upsert (FR3)', () => {
     const second = await putLog(
       apiRequest(`/api/logs/${TODAY}`, {
         method: 'PUT',
-        body: {
-          newPatients: 1,
-          followUpPatients: 1,
-          conditions: [
-            { ...entry, conditionCode: 'MH_DEPRESSION' },
+        body: logBody([
+          patientWith('NEW', [{ ...entry, conditionCode: 'MH_DEPRESSION' }]),
+          patientWith('FOLLOW_UP', [
             { ...entry, category: 'COMMUNICABLE', conditionCode: 'CD_TB' },
-          ],
-        },
+          ]),
+        ]),
         token,
       }),
       dateParams(TODAY),
@@ -307,15 +400,17 @@ describe('PUT /api/logs/:date — upsert (FR3)', () => {
 
     const log = dailyLogSchema.parse(await readJson(second))
     expect(log.totalPatients).toBe(2)
-    expect(log.conditions.map((c) => c.conditionCode).sort()).toEqual([
-      'CD_TB',
-      'MH_DEPRESSION',
-    ])
+    expect(
+      conditionsOf(log)
+        .map((c) => c.conditionCode)
+        .sort(),
+    ).toEqual(['CD_TB', 'MH_DEPRESSION'])
 
     expect(
       await prisma.dailyLog.count({ where: { practitionerId: practitioner.id } }),
     ).toBe(1)
-    // The replaced entries are gone, not orphaned.
+    // The replaced patients and their entries are gone, not orphaned.
+    expect(await prisma.patientEntry.count()).toBe(2)
     expect(await prisma.conditionEntry.count()).toBe(2)
   })
 
@@ -324,13 +419,16 @@ describe('PUT /api/logs/:date — upsert (FR3)', () => {
     const response = await putLog(
       apiRequest(`/api/logs/${TODAY}`, {
         method: 'PUT',
-        body: { newPatients: 2, followUpPatients: 0, conditions: [] },
+        body: dayWith({ newPatients: 2 }),
         token,
       }),
       dateParams(TODAY),
     )
     expect(response.status).toBe(201)
-    expect(dailyLogSchema.parse(await readJson(response)).conditions).toHaveLength(0)
+    const log = dailyLogSchema.parse(await readJson(response))
+    // Two patients were seen; neither had anything itemised.
+    expect(log.patients).toHaveLength(2)
+    expect(conditionsOf(log)).toHaveLength(0)
   })
 
   it('keeps the free text on an "Other (specify)" row', async () => {
@@ -338,23 +436,18 @@ describe('PUT /api/logs/:date — upsert (FR3)', () => {
     const response = await putLog(
       apiRequest(`/api/logs/${TODAY}`, {
         method: 'PUT',
-        body: {
-          ...body,
-          conditions: [
-            {
-              ...entry,
-              conditionCode: otherConditionCode('MENTAL_HEALTH'),
-              conditionOther: 'Exam stress',
-            },
-          ],
-        },
+        body: oneNewPatientWith({
+          ...entry,
+          conditionCode: otherConditionCode('MENTAL_HEALTH'),
+          conditionOther: 'Exam stress',
+        }),
         token,
       }),
       dateParams(TODAY),
     )
     expect(response.status).toBe(201)
     const log = dailyLogSchema.parse(await readJson(response))
-    expect(log.conditions[0].conditionOther).toBe('Exam stress')
+    expect(conditionsOf(log)[0].conditionOther).toBe('Exam stress')
   })
 })
 

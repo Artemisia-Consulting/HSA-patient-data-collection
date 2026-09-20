@@ -97,11 +97,11 @@ export function withRoute<Ctx = unknown>(
       if (error instanceof ApiException) {
         return errorResponse(error.code, error.message, error.fieldErrors)
       }
-      console.error('[api] unhandled error', {
-        url: request.url,
-        method: request.method,
-        error,
-      })
+      // Message and stack are pulled out as strings on purpose: an Error
+      // serialises to `{}` through any JSON logger, so the previous version
+      // wrote "[api] unhandled error {}" and told you nothing.
+      const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
+      console.error(`[api] unhandled error: ${request.method} ${request.url}`, detail)
       return errorResponse(
         'INTERNAL_ERROR',
         'Something went wrong on our side. Please try again.',

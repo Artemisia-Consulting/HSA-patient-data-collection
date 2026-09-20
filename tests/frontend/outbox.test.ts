@@ -11,6 +11,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { installBrowserEnv, resetBrowserEnv, storage } from './helpers/browser-env'
+import { dayWith, logBody, patientWith } from '../helpers/log-body'
 
 // The offline paths run against the mock transport (see transport.ts), which
 // is opt-in since integration. Switch it on before any client module loads.
@@ -34,19 +35,20 @@ const { dailyLogRequestSchema } = await import('../../src/lib/contract/api')
 const MONDAY = '2026-10-05'
 const TUESDAY = '2026-10-06'
 
-const body = (newPatients: number) => ({
-  newPatients,
-  followUpPatients: 2,
-  conditions: [
-    {
-      category: 'MENTAL_HEALTH' as const,
-      conditionCode: 'MH_ANXIETY',
-      diagnosisBasis: 'CLINICAL_DIAGNOSIS' as const,
-      alsoSeeingGp: 'UNSURE' as const,
-      referredByGp: 'NOT_APPLICABLE' as const,
-    },
-  ],
-})
+const body = (newPatients: number) =>
+  dayWith({
+    newPatients,
+    followUpPatients: 2,
+    conditions: [
+      {
+        category: 'MENTAL_HEALTH',
+        conditionCode: 'MH_ANXIETY',
+        diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+        alsoSeeingGp: 'UNSURE',
+        referredByGp: 'NOT_APPLICABLE',
+      },
+    ],
+  })
 
 async function signIn() {
   await api.signup({
@@ -154,20 +156,21 @@ describe('a replay the server refuses', () => {
     await signIn()
     // A body that passed client validation at queue time but is refused now —
     // e.g. the queue outlived a taxonomy change.
-    queueLog(MONDAY, {
-      newPatients: 1,
-      followUpPatients: 0,
-      conditions: [
-        {
-          category: 'COMMUNICABLE',
-          conditionCode: 'COMMUNICABLE__OTHER',
-          conditionOther: '',
-          diagnosisBasis: 'CLINICAL_DIAGNOSIS',
-          alsoSeeingGp: 'UNSURE',
-          referredByGp: 'NOT_APPLICABLE',
-        },
-      ],
-    })
+    queueLog(
+      MONDAY,
+      logBody([
+        patientWith('NEW', [
+          {
+            category: 'COMMUNICABLE',
+            conditionCode: 'COMMUNICABLE__OTHER',
+            conditionOther: '',
+            diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+            alsoSeeingGp: 'UNSURE',
+            referredByGp: 'NOT_APPLICABLE',
+          },
+        ]),
+      ]),
+    )
 
     const result = await flushOutbox()
     expect(result.sent).toBe(0)

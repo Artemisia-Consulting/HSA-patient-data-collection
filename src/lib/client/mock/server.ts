@@ -327,15 +327,35 @@ async function handlePutLog(
     newPatients: parsed.data.newPatients,
     followUpPatients: parsed.data.followUpPatients,
     totalPatients: parsed.data.newPatients + parsed.data.followUpPatients,
-    conditions: parsed.data.conditions.map((entry) => ({
-      id: mockId('ce'),
-      category: entry.category,
-      conditionCode: entry.conditionCode,
-      conditionOther: entry.conditionOther?.trim() || null,
-      diagnosisBasis: entry.diagnosisBasis,
-      alsoSeeingGp: entry.alsoSeeingGp,
-      referredByGp: entry.referredByGp,
-    })),
+    patients: parsed.data.patients
+      .map((patient, index) => ({
+        id: mockId('pe'),
+        patientType: patient.patientType,
+        // Mirrors the server: 1-based within the patient's own type.
+        position:
+          parsed.data.patients
+            .slice(0, index)
+            .filter((p) => p.patientType === patient.patientType).length + 1,
+        conditions: patient.conditions.map((entry) => ({
+          id: mockId('ce'),
+          category: entry.category,
+          conditionCode: entry.conditionCode,
+          conditionOther: entry.conditionOther?.trim() || null,
+          diagnosisBasis: entry.diagnosisBasis,
+          alsoSeeingGp: entry.alsoSeeingGp,
+          referredByGp: entry.referredByGp,
+        })),
+      }))
+      // And mirrors the order it reads them back in: new patients first, each
+      // group in position order. The frontend renders the response, so a
+      // different order here would be a real behaviour difference.
+      .sort((a, b) =>
+        a.patientType === b.patientType
+          ? a.position - b.position
+          : a.patientType === 'NEW'
+            ? -1
+            : 1,
+      ),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }

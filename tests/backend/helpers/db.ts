@@ -13,8 +13,8 @@ import { hashSessionToken } from '@/lib/server/auth'
  * The schema is applied from `schema.sql`, generated with
  * `npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script`.
  * Committing the DDL keeps the suite fast and hermetic — no Prisma CLI spawn
- * per worker — at the cost of one maintenance rule: regenerate it if
- * prisma/schema.prisma changes. It is locked for this build, so it will not.
+ * per worker — at the cost of one maintenance rule: regenerate it whenever
+ * prisma/schema.prisma changes.
  */
 const SCHEMA_PATH = path.join(process.cwd(), 'tests/backend/helpers/schema.sql')
 
@@ -46,11 +46,15 @@ export async function seedTaxonomy(): Promise<void> {
 /** Wipe practitioner data between tests. The taxonomy is left in place. */
 export async function resetDb(): Promise<void> {
   await prisma.conditionEntry.deleteMany()
+  await prisma.patientEntry.deleteMany()
   await prisma.dailyLog.deleteMany()
   await prisma.session.deleteMany()
   await prisma.dayOverride.deleteMany()
   await prisma.reminderDispatch.deleteMany()
   await prisma.practitioner.deleteMany()
+  // Better Auth's tables. Sessions and accounts cascade from the user.
+  await prisma.authVerification.deleteMany()
+  await prisma.authUser.deleteMany()
 }
 
 let sequence = 0

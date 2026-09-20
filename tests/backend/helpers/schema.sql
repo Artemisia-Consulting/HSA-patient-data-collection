@@ -42,9 +42,19 @@ CREATE TABLE "DailyLog" (
 );
 
 -- CreateTable
-CREATE TABLE "ConditionEntry" (
+CREATE TABLE "PatientEntry" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "dailyLogId" TEXT NOT NULL,
+    "patientType" TEXT NOT NULL,
+    "position" INTEGER NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "PatientEntry_dailyLogId_fkey" FOREIGN KEY ("dailyLogId") REFERENCES "DailyLog" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "ConditionEntry" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "patientEntryId" TEXT NOT NULL,
     "category" TEXT NOT NULL,
     "conditionCode" TEXT NOT NULL,
     "conditionOther" TEXT,
@@ -52,7 +62,7 @@ CREATE TABLE "ConditionEntry" (
     "alsoSeeingGp" TEXT NOT NULL DEFAULT 'UNSURE',
     "referredByGp" TEXT NOT NULL DEFAULT 'NOT_APPLICABLE',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "ConditionEntry_dailyLogId_fkey" FOREIGN KEY ("dailyLogId") REFERENCES "DailyLog" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "ConditionEntry_patientEntryId_fkey" FOREIGN KEY ("patientEntryId") REFERENCES "PatientEntry" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -92,6 +102,58 @@ CREATE TABLE "ReminderDispatch" (
     CONSTRAINT "ReminderDispatch_practitionerId_fkey" FOREIGN KEY ("practitionerId") REFERENCES "Practitioner" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+-- CreateTable
+CREATE TABLE "auth_user" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
+    "image" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "auth_session" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "token" TEXT NOT NULL,
+    "expiresAt" DATETIME NOT NULL,
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "userId" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "auth_session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "auth_user" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "auth_account" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "accountId" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "accessToken" TEXT,
+    "refreshToken" TEXT,
+    "idToken" TEXT,
+    "accessTokenExpiresAt" DATETIME,
+    "refreshTokenExpiresAt" DATETIME,
+    "scope" TEXT,
+    "password" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "auth_account_userId_fkey" FOREIGN KEY ("userId") REFERENCES "auth_user" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "auth_verification" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "identifier" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "expiresAt" DATETIME NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Practitioner_email_key" ON "Practitioner"("email");
 
@@ -117,7 +179,13 @@ CREATE INDEX "DailyLog_logDate_idx" ON "DailyLog"("logDate");
 CREATE UNIQUE INDEX "DailyLog_practitionerId_logDate_key" ON "DailyLog"("practitionerId", "logDate");
 
 -- CreateIndex
-CREATE INDEX "ConditionEntry_dailyLogId_idx" ON "ConditionEntry"("dailyLogId");
+CREATE INDEX "PatientEntry_dailyLogId_idx" ON "PatientEntry"("dailyLogId");
+
+-- CreateIndex
+CREATE INDEX "PatientEntry_patientType_idx" ON "PatientEntry"("patientType");
+
+-- CreateIndex
+CREATE INDEX "ConditionEntry_patientEntryId_idx" ON "ConditionEntry"("patientEntryId");
 
 -- CreateIndex
 CREATE INDEX "ConditionEntry_category_idx" ON "ConditionEntry"("category");
@@ -145,4 +213,19 @@ CREATE INDEX "ReminderDispatch_status_idx" ON "ReminderDispatch"("status");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ReminderDispatch_practitionerId_logDate_channel_key" ON "ReminderDispatch"("practitionerId", "logDate", "channel");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "auth_user_email_key" ON "auth_user"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "auth_session_token_key" ON "auth_session"("token");
+
+-- CreateIndex
+CREATE INDEX "auth_session_userId_idx" ON "auth_session"("userId");
+
+-- CreateIndex
+CREATE INDEX "auth_account_userId_idx" ON "auth_account"("userId");
+
+-- CreateIndex
+CREATE INDEX "auth_verification_identifier_idx" ON "auth_verification"("identifier");
 

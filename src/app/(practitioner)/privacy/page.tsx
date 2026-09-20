@@ -34,25 +34,38 @@ export default function PrivacyPage() {
 
       <Section title="What you record">
         <ul className="list-disc space-y-1.5 pl-5">
-          <li>How many new patients and follow-up patients you saw that day.</li>
+          <li>How many new patients and returning patients you saw that day.</li>
           <li>
-            Which categories and conditions you treated, chosen from a fixed list.
+            For each of those patients, which conditions you treated — chosen from
+            a fixed list, and as many or as few as you want to itemise.
           </li>
           <li>
-            For each condition: how you arrived at it, and whether a GP is involved.
+            For each condition: how you arrived at the diagnosis, and whether a
+            conventional medical practitioner is involved.
           </li>
         </ul>
+        <p className="mt-2">
+          Recording condition by condition <em>per patient</em> is what lets the
+          study say how often one person presents with more than one thing. It
+          does not add anything about who that person is.
+        </p>
       </Section>
 
       <Section title="What is never collected">
         <ul className="list-disc space-y-1.5 pl-5">
           <li>Patient names, initials, or any patient reference.</li>
           <li>ID numbers, dates of birth, contact details or addresses.</li>
+          <li>Age, sex, file numbers or medical aid details.</li>
           <li>Clinical notes, prescriptions or case histories.</li>
         </ul>
         <p className="mt-2">
           There is no field for any of these anywhere in the app, and none in the
           database behind it. That is the safeguard — not a promise to be careful.
+        </p>
+        <p className="mt-2">
+          A patient you record today and the same person returning next week are
+          two unrelated entries. Nothing in the app can connect them, including
+          for you — so no individual can be followed through the data.
         </p>
       </Section>
 
@@ -63,6 +76,24 @@ export default function PrivacyPage() {
           <strong>province</strong>. Your email address, your name and your
           practice name are never included in any dashboard view or CSV export.
           Your email is used for one thing: sending you your daily logging link.
+        </p>
+      </Section>
+
+      <Section title="If you sign in with Google">
+        <p>
+          Signing in with Google is optional — the link in your reminder does
+          the same job. If you use it, Google tells this app two things: the
+          email address you signed up with, and the name on your Google
+          account. It is not given your password, your contacts, your calendar
+          or anything else, and it cannot act on your Google account.
+        </p>
+        <p className="mt-2">
+          That check is only ever used to recognise you. It never creates a
+          participant on its own: if Google confirms an address that has not
+          signed up, you are taken to the sign-up form to tick the consent box
+          yourself. And nothing about it reaches the research dataset — the
+          researchers see the same anonymous ID and province they would have
+          seen anyway.
         </p>
       </Section>
 

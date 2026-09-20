@@ -20,6 +20,7 @@ import {
   diagnosisBasisSchema,
   gpCoManagementSchema,
   logDateSchema,
+  patientTypeSchema,
   reminderChannelSchema,
   reminderTimeSchema,
   referredByGpSchema,
@@ -76,6 +77,19 @@ export type ApiErrorCode = keyof typeof API_ERROR_CODES
 export const REMINDER_LINK_QUERY_PARAM = 'k'
 export const SESSION_COOKIE_NAME = 'hsa_session'
 export const SESSION_TTL_DAYS = 120
+
+/**
+ * Google sign-in (Better Auth) — the URLs, kept here rather than in the server
+ * module so a component can link to them without importing Prisma and
+ * Better Auth into the browser bundle.
+ *
+ * `/api/auth/google/start` is a GET that 302s to Google. `/api/oauth/*` is
+ * where Better Auth itself is mounted — NOT `/api/auth/*`, which this app's
+ * own routes already occupy. See src/lib/server/googleAuth.ts.
+ */
+export const OAUTH_BASE_PATH = '/api/oauth'
+export const GOOGLE_START_PATH = '/api/auth/google/start'
+export const GOOGLE_FINISH_PATH = '/api/auth/google/finish'
 
 /* ================================================================== *
  * Practitioner
@@ -198,8 +212,8 @@ export type TaxonomyResponse = z.infer<typeof taxonomyResponseSchema>
  * ================================================================== */
 
 /**
- * One condition treated that day. Note there is no patient count and no
- * identifier of any kind — a row says "this was treated today", nothing more.
+ * One condition treated for one patient. There is no identifier of any kind:
+ * a row says "this was treated", never for whom.
  */
 export const conditionEntryInputSchema = z
   .object({
@@ -222,12 +236,51 @@ export const conditionEntryInputSchema = z
   )
 export type ConditionEntryInput = z.infer<typeof conditionEntryInputSchema>
 
-export const dailyLogRequestSchema = z.object({
-  newPatients: z.number().int().min(0).max(200),
-  followUpPatients: z.number().int().min(0).max(200),
-  /** May be empty: a practitioner can log counts without itemising conditions. */
-  conditions: z.array(conditionEntryInputSchema).max(40),
+/**
+ * One patient seen that day, and what was treated for them.
+ *
+ * `conditions` may be empty. A practitioner who saw twelve new patients but
+ * only wants to itemise three still submits twelve patients — nine of them
+ * blank — because the day's counts are what decide how many there are.
+ */
+export const patientEntryInputSchema = z.object({
+  patientType: patientTypeSchema,
+  conditions: z.array(conditionEntryInputSchema).max(20),
 })
+export type PatientEntryInput = z.infer<typeof patientEntryInputSchema>
+
+/**
+ * The counts and the patient list have to agree, and the server is where that
+ * is settled. The client builds one patient per counted patient, so a mismatch
+ * means a client bug — and silently trusting either side would make
+ * `newPatients` and "the number of new patients in the data" two different
+ * numbers in the exported dataset.
+ */
+export const dailyLogRequestSchema = z
+  .object({
+    newPatients: z.number().int().min(0).max(200),
+    followUpPatients: z.number().int().min(0).max(200),
+    patients: z.array(patientEntryInputSchema).max(400),
+  })
+  .superRefine((body, ctx) => {
+    const counted = (type: 'NEW' | 'FOLLOW_UP') =>
+      body.patients.filter((patient) => patient.patientType === type).length
+
+    if (counted('NEW') !== body.newPatients) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['patients'],
+        message: `Expected ${body.newPatients} new patient entries, got ${counted('NEW')}`,
+      })
+    }
+    if (counted('FOLLOW_UP') !== body.followUpPatients) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['patients'],
+        message: `Expected ${body.followUpPatients} returning patient entries, got ${counted('FOLLOW_UP')}`,
+      })
+    }
+  })
 export type DailyLogRequest = z.infer<typeof dailyLogRequestSchema>
 
 export const conditionEntrySchema = z.object({
@@ -240,13 +293,22 @@ export const conditionEntrySchema = z.object({
   referredByGp: referredByGpSchema,
 })
 
+export const patientEntrySchema = z.object({
+  id: z.string(),
+  patientType: patientTypeSchema,
+  /** 1-based position within its type. Ordering only — never an identity. */
+  position: z.number().int(),
+  conditions: z.array(conditionEntrySchema),
+})
+export type PatientEntry = z.infer<typeof patientEntrySchema>
+
 export const dailyLogSchema = z.object({
   id: z.string(),
   logDate: logDateSchema,
   newPatients: z.number().int(),
   followUpPatients: z.number().int(),
   totalPatients: z.number().int(),
-  conditions: z.array(conditionEntrySchema),
+  patients: z.array(patientEntrySchema),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 })
@@ -379,6 +441,19 @@ export const dashboardSummarySchema = z.object({
       entries: z.number().int(),
     }),
   ),
+  /**
+   * Questions only the patient-level model can answer: how the condition load
+   * splits between first visits and follow-ups, and how often one patient
+   * presents with more than one thing.
+   */
+  byPatientType: z.array(
+    z.object({
+      patientType: patientTypeSchema,
+      patients: z.number().int(),
+      entries: z.number().int(),
+    }),
+  ),
+  patientsWithMultipleConditions: z.number().int(),
 })
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>
 
@@ -390,6 +465,13 @@ export const dashboardEntryRowSchema = z.object({
   logDate: logDateSchema,
   newPatients: z.number().int(),
   followUpPatients: z.number().int(),
+  /**
+   * Groups rows belonging to the same patient visit, so two conditions on one
+   * patient are analysable as such. Random per visit and never reused, so it
+   * cannot link an individual across days.
+   */
+  patientId: z.string().nullable(),
+  patientType: patientTypeSchema.nullable(),
   category: conditionCategorySchema.nullable(),
   conditionCode: z.string().nullable(),
   conditionLabel: z.string().nullable(),
@@ -405,6 +487,7 @@ export const dashboardEntriesResponseSchema = z.object({
   pageSize: z.number().int(),
   totalRows: z.number().int(),
 })
+export type DashboardEntriesResponse = z.infer<typeof dashboardEntriesResponseSchema>
 
 /* ================================================================== *
  * GET /api/health → 200

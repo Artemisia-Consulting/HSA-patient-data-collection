@@ -13,8 +13,12 @@
  * Duplicate email is the interesting case and the one a rubric tier-3 turns
  * on. A 409 here is not a dead end: the email they typed is already a
  * registered practitioner, which means *they* are, so the screen switches to
- * recovery — it offers to reopen their existing logging link on this device
- * rather than telling them to go away.
+ * recovery — it offers Google sign-in and their existing logging link, rather
+ * than telling them to go away.
+ *
+ * `prefill` arrives when Google has already verified an address that is not
+ * registered yet. It fills the fields; it does not tick the box. Consent is
+ * the one thing that cannot be inferred from an OAuth callback.
  *
  * OWNER: Stream 2.
  */
@@ -22,6 +26,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useState } from 'react'
 
+import { GoogleSignInLink } from '@/components/signin/GoogleSignInLink'
+import { ReminderLinkForm } from '@/components/signin/ReminderLinkForm'
 import { Button } from '@/components/ui/Button'
 import { ApiClientError, ApiNetworkError, api } from '@/lib/client'
 import { signupRequestSchema } from '@/lib/contract/api'
@@ -41,11 +47,18 @@ const PROVINCES = [
 
 type Mode = 'signup' | 'duplicate'
 
-export function SignupForm() {
+export interface SignupFormProps {
+  /** Name and email already verified by Google, when the flow came that way. */
+  prefill?: { email: string; fullName: string }
+  /** Whether to offer Google on the duplicate-email panel. Server-decided. */
+  googleEnabled?: boolean
+}
+
+export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) {
   const router = useRouter()
 
-  const [email, setEmail] = useState('')
-  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState(prefill?.email ?? '')
+  const [fullName, setFullName] = useState(prefill?.fullName ?? '')
   const [practiceName, setPracticeName] = useState('')
   const [province, setProvince] = useState('')
   const [consent, setConsent] = useState(false)
@@ -106,7 +119,13 @@ export function SignupForm() {
   }
 
   if (mode === 'duplicate') {
-    return <AlreadyRegistered email={email.trim()} onBack={() => setMode('signup')} />
+    return (
+      <AlreadyRegistered
+        email={email.trim()}
+        googleEnabled={googleEnabled}
+        onBack={() => setMode('signup')}
+      />
+    )
   }
 
   const errorFor = (field: string) => fieldErrors[field]?.[0]
@@ -197,11 +216,13 @@ export function SignupForm() {
             <strong className="font-semibold">
               I agree to take part in the HSA October 2026 data collection.
             </strong>{' '}
-            I understand that I will log daily patient <em>counts</em> and the{' '}
-            <em>types of condition</em> I treated — never patient names, ID numbers
-            or clinical notes. My own email is used only to send me my logging
-            link; researchers see an anonymous ID and my province, never my email
-            or my practice. Ticking this box <strong>is</strong> my consent — there
+            I understand that each day I will record how many patients I saw, and
+            for each of them the <em>types of condition</em> I treated — never
+            patient names, ID numbers, ages, sexes, file numbers or clinical
+            notes, and nothing that links a patient from one day to the next. My
+            own email is used only to send me my logging link; researchers see an
+            anonymous ID and my province, never my email or my practice. Ticking
+            this box <strong>is</strong> my consent — there
             is no confirmation email to click and no password to remember. I can
             ask the HSA to remove my data at any time.
           </span>
@@ -236,34 +257,15 @@ export function SignupForm() {
  * The 409 path — recoverable, not a dead end (rubric item 1, tier 3).
  * ------------------------------------------------------------------ */
 
-function AlreadyRegistered({ email, onBack }: { email: string; onBack: () => void }) {
-  const router = useRouter()
-  const [linkValue, setLinkValue] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleRecover(event: React.FormEvent) {
-    event.preventDefault()
-    setError(null)
-    const { reminderLinkIdFromUrl } = await import('@/lib/client')
-    const linkId = reminderLinkIdFromUrl(linkValue)
-    if (!linkId) {
-      setError('Paste the whole link from your reminder, or just the code after “k=”.')
-      return
-    }
-    setBusy(true)
-    try {
-      await api.resume(linkId)
-      router.replace('/log')
-    } catch {
-      setError(
-        'That link isn’t recognised. Ask the HSA to resend it to ' + email + '.',
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-
+function AlreadyRegistered({
+  email,
+  googleEnabled,
+  onBack,
+}: {
+  email: string
+  googleEnabled: boolean
+  onBack: () => void
+}) {
   return (
     <div className="space-y-4">
       <div className="rounded-2xl bg-hsa-50 p-4 ring-1 ring-hsa-600/20 dark:bg-hsa-700/15 dark:ring-hsa-500/30">
@@ -277,39 +279,25 @@ function AlreadyRegistered({ email, onBack }: { email: string; onBack: () => voi
         </p>
       </div>
 
-      <form onSubmit={handleRecover} className="space-y-3">
-        <div>
-          <label
-            htmlFor="recover-link"
-            className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200"
-          >
-            Paste your logging link
-          </label>
-          <input
-            id="recover-link"
-            type="text"
-            value={linkValue}
-            onChange={(event) => setLinkValue(event.target.value)}
-            placeholder="https://…/log?k=…"
-            autoComplete="off"
-            className="min-h-[48px] w-full rounded-xl bg-neutral-50 px-3 text-base text-neutral-900 ring-1 ring-inset ring-neutral-300 focus:ring-2 focus:ring-hsa-600 dark:bg-neutral-800 dark:text-neutral-50 dark:ring-neutral-700"
-          />
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-            It’s in any reminder we’ve sent you. Opening that link on this phone
-            does the same thing and is quicker.
+      {googleEnabled ? (
+        <>
+          <GoogleSignInLink label="Sign in with Google" />
+          <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">
+            Works if that address is a Google account.
           </p>
-        </div>
+          <div className="flex items-center gap-3">
+            <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-700" />
+            <span className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              or
+            </span>
+            <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-700" />
+          </div>
+        </>
+      ) : null}
 
-        {error ? (
-          <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
-            {error}
-          </p>
-        ) : null}
-
-        <Button type="submit" size="lg" fullWidth busy={busy}>
-          Use this link
-        </Button>
-      </form>
+      <ReminderLinkForm
+        notRecognisedHint={`That link isn’t recognised. Ask the HSA to resend it to ${email}.`}
+      />
 
       <p className="text-center text-sm text-neutral-600 dark:text-neutral-300">
         Can’t find it? Email{' '}

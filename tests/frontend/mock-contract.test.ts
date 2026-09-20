@@ -17,6 +17,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { installBrowserEnv, resetBrowserEnv } from './helpers/browser-env'
+import { conditionsOf, dayWith, logBody, patientWith } from '../helpers/log-body'
 
 // The mock is opt-in since integration (see transport.ts). This suite tests
 // the mock itself, so it switches it on before any client module is imported.
@@ -194,88 +195,119 @@ describe('the daily log routes', () => {
   it('upserts: one row per practitioner per day', async () => {
     await api.signup(SIGNUP)
 
-    const first = await api.putLog(today, {
-      newPatients: 4,
-      followUpPatients: 6,
-      conditions: [
-        {
-          category: 'MENTAL_HEALTH',
-          conditionCode: 'MH_ANXIETY',
-          diagnosisBasis: 'CLINICAL_DIAGNOSIS',
-          alsoSeeingGp: 'UNSURE',
-          referredByGp: 'NOT_APPLICABLE',
-        },
-      ],
-    })
-    expect(() => dailyLogSchema.parse(first)).not.toThrow()
-    expect(first.totalPatients).toBe(10)
-    expect((await api.me()).hasLoggedToday).toBe(true)
-
-    const second = await api.putLog(today, {
-      newPatients: 5,
-      followUpPatients: 6,
-      conditions: [],
-    })
-    expect(second.id).toBe(first.id)
-    expect(second.newPatients).toBe(5)
-    expect(second.conditions).toHaveLength(0)
-    expect((await api.listLogs())).toHaveLength(1)
-  })
-
-  it('stores the free text only for an "Other" code', async () => {
-    await api.signup(SIGNUP)
-    const log = await api.putLog(today, {
-      newPatients: 1,
-      followUpPatients: 0,
-      conditions: [
-        {
-          category: 'OTHER',
-          conditionCode: 'OTHER__OTHER',
-          conditionOther: 'post-surgical recovery support',
-          diagnosisBasis: 'PRESENTING_COMPLAINT_ONLY',
-          alsoSeeingGp: 'YES',
-          referredByGp: 'YES',
-        },
-        {
-          category: 'MENTAL_HEALTH',
-          conditionCode: 'MH_SLEEP',
-          diagnosisBasis: 'CLINICAL_DIAGNOSIS',
-          alsoSeeingGp: 'NO',
-          referredByGp: 'NO',
-        },
-      ],
-    })
-    expect(log.conditions[0].conditionOther).toBe('post-surgical recovery support')
-    expect(log.conditions[1].conditionOther).toBeNull()
-  })
-
-  it('rejects an "Other" code with no free text', async () => {
-    await api.signup(SIGNUP)
-    await expect(
-      api.putLog(today, {
-        newPatients: 0,
-        followUpPatients: 0,
+    const first = await api.putLog(
+      today,
+      dayWith({
+        newPatients: 4,
+        followUpPatients: 6,
         conditions: [
           {
-            category: 'COMMUNICABLE',
-            conditionCode: 'COMMUNICABLE__OTHER',
-            conditionOther: '',
+            category: 'MENTAL_HEALTH',
+            conditionCode: 'MH_ANXIETY',
             diagnosisBasis: 'CLINICAL_DIAGNOSIS',
             alsoSeeingGp: 'UNSURE',
             referredByGp: 'NOT_APPLICABLE',
           },
         ],
       }),
+    )
+    expect(() => dailyLogSchema.parse(first)).not.toThrow()
+    expect(first.totalPatients).toBe(10)
+    expect(first.patients).toHaveLength(10)
+    expect((await api.me()).hasLoggedToday).toBe(true)
+
+    const second = await api.putLog(
+      today,
+      dayWith({ newPatients: 5, followUpPatients: 6 }),
+    )
+    expect(second.id).toBe(first.id)
+    expect(second.newPatients).toBe(5)
+    expect(second.patients).toHaveLength(11)
+    expect(conditionsOf(second)).toHaveLength(0)
+    expect((await api.listLogs())).toHaveLength(1)
+  })
+
+  it('numbers patients within their own type', async () => {
+    await api.signup(SIGNUP)
+    const log = await api.putLog(
+      today,
+      logBody([patientWith('NEW'), patientWith('FOLLOW_UP'), patientWith('NEW')]),
+    )
+    expect(log.patients.map((p) => [p.patientType, p.position])).toEqual([
+      ['NEW', 1],
+      ['NEW', 2],
+      ['FOLLOW_UP', 1],
+    ])
+  })
+
+  it('rejects counts that disagree with the patients sent', async () => {
+    await api.signup(SIGNUP)
+    await expect(
+      api.putLog(today, {
+        newPatients: 3,
+        followUpPatients: 0,
+        patients: [patientWith('NEW')],
+      }),
+    ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_FAILED' })
+  })
+
+  it('stores the free text only for an "Other" code', async () => {
+    await api.signup(SIGNUP)
+    const log = await api.putLog(
+      today,
+      logBody([
+        patientWith('NEW', [
+          {
+            category: 'OTHER',
+            conditionCode: 'OTHER__OTHER',
+            conditionOther: 'post-surgical recovery support',
+            diagnosisBasis: 'PRESENTING_COMPLAINT_ONLY',
+            alsoSeeingGp: 'YES',
+            referredByGp: 'YES',
+          },
+          {
+            category: 'MENTAL_HEALTH',
+            conditionCode: 'MH_SLEEP',
+            diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+            alsoSeeingGp: 'NO',
+            referredByGp: 'NO',
+          },
+        ]),
+      ]),
+    )
+    const conditions = conditionsOf(log)
+    expect(conditions[0].conditionOther).toBe('post-surgical recovery support')
+    expect(conditions[1].conditionOther).toBeNull()
+  })
+
+  it('rejects an "Other" code with no free text', async () => {
+    await api.signup(SIGNUP)
+    await expect(
+      api.putLog(
+        today,
+        logBody([
+          patientWith('NEW', [
+            {
+              category: 'COMMUNICABLE',
+              conditionCode: 'COMMUNICABLE__OTHER',
+              conditionOther: '',
+              diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+              alsoSeeingGp: 'UNSURE',
+              referredByGp: 'NOT_APPLICABLE',
+            },
+          ]),
+        ]),
+      ),
     ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_FAILED' })
   })
 
   it('rejects counts outside the contract range', async () => {
     await api.signup(SIGNUP)
     await expect(
-      api.putLog(today, { newPatients: 201, followUpPatients: 0, conditions: [] }),
+      api.putLog(today, dayWith({ newPatients: 201 })),
     ).rejects.toMatchObject({ status: 400 })
     await expect(
-      api.putLog(today, { newPatients: -1, followUpPatients: 0, conditions: [] }),
+      api.putLog(today, { newPatients: -1, followUpPatients: 0, patients: [] }),
     ).rejects.toMatchObject({ status: 400 })
   })
 
@@ -283,7 +315,7 @@ describe('the daily log routes', () => {
     await expect(api.getLog(today)).rejects.toMatchObject({ status: 401 })
     await expect(api.listLogs()).rejects.toMatchObject({ status: 401 })
     await expect(
-      api.putLog(today, { newPatients: 0, followUpPatients: 0, conditions: [] }),
+      api.putLog(today, dayWith({})),
     ).rejects.toMatchObject({ status: 401 })
   })
 })
@@ -291,19 +323,22 @@ describe('the daily log routes', () => {
 describe('POPIA', () => {
   it('has no patient-identifying field anywhere in a stored log', async () => {
     await api.signup(SIGNUP)
-    const log = await api.putLog(todayInSast(), {
-      newPatients: 2,
-      followUpPatients: 1,
-      conditions: [
-        {
-          category: 'COMMUNICABLE',
-          conditionCode: 'CD_TB',
-          diagnosisBasis: 'CLINICAL_DIAGNOSIS',
-          alsoSeeingGp: 'YES',
-          referredByGp: 'YES',
-        },
-      ],
-    })
+    const log = await api.putLog(
+      todayInSast(),
+      dayWith({
+        newPatients: 2,
+        followUpPatients: 1,
+        conditions: [
+          {
+            category: 'COMMUNICABLE',
+            conditionCode: 'CD_TB',
+            diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+            alsoSeeingGp: 'YES',
+            referredByGp: 'YES',
+          },
+        ],
+      }),
+    )
 
     const serialised = JSON.stringify(log).toLowerCase()
     for (const forbidden of [
@@ -322,7 +357,7 @@ describe('POPIA', () => {
     }
 
     // A condition row says "this was treated today" and nothing else.
-    expect(Object.keys(log.conditions[0]).sort()).toEqual([
+    expect(Object.keys(conditionsOf(log)[0]).sort()).toEqual([
       'alsoSeeingGp',
       'category',
       'conditionCode',
@@ -330,6 +365,16 @@ describe('POPIA', () => {
       'diagnosisBasis',
       'id',
       'referredByGp',
+    ])
+
+    // A patient row says "somebody was seen, and they were new" — no age, no
+    // sex, no file number, and `position` is ordering within the day rather
+    // than anything that could follow a person from one visit to the next.
+    expect(Object.keys(log.patients[0]).sort()).toEqual([
+      'conditions',
+      'id',
+      'patientType',
+      'position',
     ])
   })
 })

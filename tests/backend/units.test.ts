@@ -8,6 +8,14 @@ import { clientIp } from '@/lib/server/http'
 import { consumeRateLimit, resetRateLimits } from '@/lib/server/rateLimit'
 import { hashSessionToken, generateSessionToken, safeCompare } from '@/lib/server/auth'
 import { dailyLogRequestSchema } from '@/lib/contract'
+import {
+  COLLECTION_END_DATE,
+  COLLECTION_START_DATE,
+  EARLY_ENTRY_FROM_DATE,
+  addDaysToLogDate,
+  isWithinCollectionWindow,
+  isWritableLogDate,
+} from '@/lib/dates'
 
 describe('CSV serialisation', () => {
   it('quotes values containing a comma, quote or newline', () => {
@@ -100,18 +108,64 @@ describe('client IP extraction', () => {
   })
 })
 
+/**
+ * Two questions about a date, with deliberately different answers: whether the
+ * day counts towards the study, and whether a log may be saved for it at all.
+ * Conflating them is what these tests exist to catch — reminders and the
+ * research dataset key off the first, the write path off the second.
+ */
+describe('collection window vs. writable date', () => {
+  const dayBeforeStart = addDaysToLogDate(COLLECTION_START_DATE, -1)
+  const dayAfterEnd = addDaysToLogDate(COLLECTION_END_DATE, 1)
+  const dayBeforeFloor = addDaysToLogDate(EARLY_ENTRY_FROM_DATE, -1)
+
+  it('counts only the collection window towards the study', () => {
+    expect(isWithinCollectionWindow(COLLECTION_START_DATE)).toBe(true)
+    expect(isWithinCollectionWindow(COLLECTION_END_DATE)).toBe(true)
+    expect(isWithinCollectionWindow(dayBeforeStart)).toBe(false)
+    expect(isWithinCollectionWindow(dayAfterEnd)).toBe(false)
+  })
+
+  it('lets a day before the study opens be written anyway', () => {
+    expect(isWritableLogDate(dayBeforeStart)).toBe(true)
+    expect(isWritableLogDate(EARLY_ENTRY_FROM_DATE)).toBe(true)
+  })
+
+  it('still refuses a date far enough back to be a typo', () => {
+    expect(isWritableLogDate(dayBeforeFloor)).toBe(false)
+    expect(isWritableLogDate('2025-10-01')).toBe(false)
+  })
+
+  // Nothing widens the far end: a day after the study has closed is not a day
+  // anyone needs to record, and the floor only ever moved on the early side.
+  it('does not widen the window after it closes', () => {
+    expect(isWritableLogDate(COLLECTION_END_DATE)).toBe(true)
+    expect(isWritableLogDate(dayAfterEnd)).toBe(false)
+  })
+
+  it('opens the floor a full quarter before the study', () => {
+    expect(EARLY_ENTRY_FROM_DATE).toBe('2026-07-03')
+    expect(EARLY_ENTRY_FROM_DATE < COLLECTION_START_DATE).toBe(true)
+  })
+})
+
 describe('Zod issue flattening', () => {
   it('dots nested paths so the frontend can address the input', () => {
     const result = dailyLogRequestSchema.safeParse({
       newPatients: -1,
       followUpPatients: 0,
-      conditions: [
+      patients: [
         {
-          category: 'MENTAL_HEALTH',
-          conditionCode: 'MENTAL_HEALTH__OTHER',
-          diagnosisBasis: 'CLINICAL_DIAGNOSIS',
-          alsoSeeingGp: 'YES',
-          referredByGp: 'NO',
+          patientType: 'NEW',
+          conditions: [
+            {
+              category: 'MENTAL_HEALTH',
+              conditionCode: 'MENTAL_HEALTH__OTHER',
+              diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+              alsoSeeingGp: 'YES',
+              referredByGp: 'NO',
+            },
+          ],
         },
       ],
     })
@@ -119,6 +173,8 @@ describe('Zod issue flattening', () => {
 
     const fieldErrors = fieldErrorsFromZod(result.error!)
     expect(fieldErrors.newPatients).toBeDefined()
-    expect(fieldErrors['conditions.0.conditionOther']).toBeDefined()
+    // Two indices deep: the card the frontend has to mark is a condition on a
+    // particular patient, not a condition on the day.
+    expect(fieldErrors['patients.0.conditions.0.conditionOther']).toBeDefined()
   })
 })

@@ -18,9 +18,9 @@ import { useId, useState } from 'react'
 import {
   COLLECTION_END_DATE,
   COLLECTION_START_DATE,
+  EARLY_ENTRY_FROM_DATE,
   addDaysToLogDate,
   formatLogDateLong,
-  isWithinCollectionWindow,
 } from '@/lib/dates'
 
 interface DateFieldProps {
@@ -37,7 +37,11 @@ export function DateField({ value, today, onChange }: DateFieldProps) {
   const isToday = value === today
   const isYesterday = value === yesterday
   const isCustom = !isToday && !isYesterday
-  const outsideWindow = !isWithinCollectionWindow(value)
+  // Two different notes, because the two sides of the window mean opposite
+  // things: a day before the study opens is saved but not counted, a day
+  // after it closes cannot be saved at all.
+  const beforeStudy = value < COLLECTION_START_DATE
+  const afterStudy = value > COLLECTION_END_DATE
 
   const chip = (selected: boolean) =>
     [
@@ -94,6 +98,7 @@ export function DateField({ value, today, onChange }: DateFieldProps) {
             id={inputId}
             type="date"
             value={value}
+            min={EARLY_ENTRY_FROM_DATE}
             max={today}
             onChange={(event) => {
               if (event.target.value) onChange(event.target.value)
@@ -103,11 +108,17 @@ export function DateField({ value, today, onChange }: DateFieldProps) {
         </div>
       ) : null}
 
-      {outsideWindow ? (
+      {beforeStudy ? (
         <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-          Outside the {formatLogDateLong(COLLECTION_START_DATE)} –{' '}
-          {formatLogDateLong(COLLECTION_END_DATE)} collection window. You can still
-          practise here; entries count from 1 October.
+          This day is before the study opens. It will be saved so you can use the
+          app now, but only entries from{' '}
+          {formatLogDateLong(COLLECTION_START_DATE)} onwards are part of the
+          research.
+        </p>
+      ) : afterStudy ? (
+        <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+          The collection closed on {formatLogDateLong(COLLECTION_END_DATE)}. This
+          day can’t be logged.
         </p>
       ) : null}
     </section>

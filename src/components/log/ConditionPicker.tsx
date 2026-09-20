@@ -18,9 +18,13 @@
  * reachable but never in the way (the brief is explicit that entry must be
  * tick-and-select, with free text as the fallback only).
  *
+ * One of these is rendered per patient, so every id it generates has to be
+ * unique per instance — hence `useId` rather than the fixed ids an earlier
+ * single-picker version could get away with.
+ *
  * OWNER: Stream 2.
  */
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 
 import { searchConditions } from '@/lib/client'
 import type { TaxonomyResponse } from '@/lib/contract/api'
@@ -33,15 +37,28 @@ interface ConditionPickerProps {
   /** Condition codes currently selected, across all categories. */
   selectedCodes: Set<string>
   onToggle: (category: ConditionCategory, code: string) => void
+  title?: string
+  hint?: string
+  /**
+   * Drops the card chrome, for when the picker is already inside one — a
+   * patient card, in practice. Nesting two identical rounded panels reads as a
+   * rendering bug rather than as structure.
+   */
+  frameless?: boolean
 }
 
 export function ConditionPicker({
   categories,
   selectedCodes,
   onToggle,
+  title = 'Conditions treated',
+  hint = 'Optional. Tap a category, then tap every condition you treated today.',
+  frameless = false,
 }: ConditionPickerProps) {
   const [activeCategory, setActiveCategory] = useState<ConditionCategory | null>(null)
   const [query, setQuery] = useState('')
+  const headingId = useId()
+  const searchId = useId()
 
   const active = categories.find((category) => category.code === activeCategory) ?? null
 
@@ -55,18 +72,26 @@ export function ConditionPicker({
 
   return (
     <section
-      aria-labelledby="conditions-heading"
-      className="rounded-2xl bg-white p-3 ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-800"
+      aria-labelledby={headingId}
+      className={
+        frameless
+          ? ''
+          : 'rounded-2xl bg-white p-3 ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-800'
+      }
     >
-      <h2
-        id="conditions-heading"
-        className="text-base font-semibold text-neutral-900 dark:text-neutral-100"
+      <h3
+        id={headingId}
+        className={
+          frameless
+            ? 'text-sm font-semibold text-neutral-700 dark:text-neutral-200'
+            : 'text-base font-semibold text-neutral-900 dark:text-neutral-100'
+        }
       >
-        Conditions treated
-      </h2>
-      <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-        Optional. Tap a category, then tap every condition you treated today.
-      </p>
+        {title}
+      </h3>
+      {hint ? (
+        <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>
+      ) : null}
 
       <div role="group" aria-label="Condition category" className="mt-2.5 flex flex-wrap gap-2">
         {categories.map((category) => {
@@ -107,11 +132,11 @@ export function ConditionPicker({
 
       {active ? (
         <div className="mt-3">
-          <label htmlFor="condition-search" className="sr-only">
+          <label htmlFor={searchId} className="sr-only">
             Search conditions in {active.label}
           </label>
           <input
-            id="condition-search"
+            id={searchId}
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}

@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation'
 import { useState, type ReactNode } from 'react'
 
 import { ServiceWorkerRegistrar } from '@/components/shell/ServiceWorkerRegistrar'
+import { api } from '@/lib/client'
 
 const NAV = [
   { href: '/log', label: 'Today’s log' },
@@ -36,10 +37,26 @@ export function AppShell({ children, showNav = true }: AppShellProps) {
   const router = useRouter()
   const [navOpen, setNavOpen] = useState(false)
 
-  function handleSignOut() {
-    localStorage.removeItem('hsa.session')
-    document.cookie = 'hsa_session=; path=/; max-age=0'
-    router.push('/signup')
+  const [signingOut, setSigningOut] = useState(false)
+
+  /**
+   * Sign-out is a server round trip, not a localStorage delete. The session
+   * cookie is httpOnly (so `document.cookie` cannot clear it) and the Session
+   * row would otherwise stay valid for its full 120-day TTL. `api.signOut`
+   * clears this device's stored token and link id in a `finally`, so a failed
+   * request still leaves the phone signed out.
+   */
+  async function handleSignOut() {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await api.signOut()
+    } finally {
+      setSigningOut(false)
+      // replace, not push: the back button must not return to a signed-in screen.
+      router.replace('/signup')
+      router.refresh()
+    }
   }
 
   return (
@@ -98,13 +115,14 @@ export function AppShell({ children, showNav = true }: AppShellProps) {
                 <li>
                   <button
                     type="button"
+                    disabled={signingOut}
                     onClick={() => {
                       setNavOpen(false)
-                      handleSignOut()
+                      void handleSignOut()
                     }}
                     className="flex w-full min-h-[48px] items-center border-b border-neutral-100 text-[15px] font-medium text-red-700 last:border-b-0 dark:border-neutral-800 dark:text-red-400"
                   >
-                    Sign out
+                    {signingOut ? 'Signing out…' : 'Sign out'}
                   </button>
                 </li>
               </ul>

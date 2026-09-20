@@ -20,3 +20,7 @@ Thumbs.db
 .idea/
 .vercel
 *.tsbuildinfo
+
+# Agent worktrees and tooling scratch (contain their own .env and build output)
+.claude/
+.vercel-tmp/

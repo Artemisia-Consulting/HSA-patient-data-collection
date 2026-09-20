@@ -1,13 +1,17 @@
 // HSA Patient Data Collection — shared database schema.
 //
-// OWNERSHIP: this file is owned by the integration lead. Agents 1/2/3 read it
-// but must NOT edit it. If a field is missing for your slice, report it rather
-// than adding it yourself — a schema edit in one worktree breaks the others.
+// OWNERSHIP: integration lead. The three build streams have been merged, so
+// this is now edited in one place rather than read-only — but a change here
+// still ripples through the contract, the API, the form and the export, and
+// tests/backend/helpers/schema.sql must be regenerated to match.
 //
 // POPIA: there is deliberately no patient-identifying column anywhere below.
-// A ConditionEntry records *what was treated*, never *who*. Practitioner.email
-// is the only personal datum in the system and must never leave the server in
-// any dashboard/export response — use Practitioner.id as the anonymised key.
+// Data is recorded per *patient* but never per *person*: a PatientEntry says
+// only that somebody, new or returning, was seen, and a ConditionEntry records
+// what was treated — never who. Nothing links the same individual across two
+// days. Practitioner.email is the only personal datum in the system and must
+// never leave the server in any dashboard/export response — use
+// Practitioner.id as the anonymised key.
 //
 // Enum-like columns are plain String because SQLite has no native enum type.
 // The permitted values live in src/lib/contract/enums.ts and are enforced by
@@ -104,19 +108,51 @@ model DailyLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  conditions ConditionEntry[]
+  patients PatientEntry[]
 
   @@unique([practitionerId, logDate])
   @@index([logDate])
 }
 
-/// A condition treated on a given day (FR4/FR5/FR6). One row per condition,
-/// not per patient — practitioners tick all that apply to keep entry under 30s.
-model ConditionEntry {
+/// One patient seen on a given day. Conditions hang off a patient rather than
+/// off the day, so the dataset can answer "how many patients presented with
+/// more than one condition?" and "were new patients more likely to be
+/// GP-referred?" — questions the day-level model could not express at all.
+///
+/// POPIA: there is still nothing identifying here, by construction. A
+/// PatientEntry says only "somebody, new or returning, was seen" — no name, no
+/// age, no sex, no file number, and no key that links the same person across
+/// two days. The rows are patient-*scoped*, not patient-*identified*.
+model PatientEntry {
   id String @id @default(cuid())
 
   dailyLogId String
   dailyLog   DailyLog @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
+
+  /// NEW | FOLLOW_UP — see enums.ts
+  patientType String
+
+  /// 1-based position within its type on that day. Gives the form a stable
+  /// order to render and re-load in; it carries no identity and is not
+  /// comparable across days.
+  position Int
+
+  createdAt DateTime @default(now())
+
+  conditions ConditionEntry[]
+
+  @@index([dailyLogId])
+  @@index([patientType])
+}
+
+/// A condition treated for one patient (FR4/FR5/FR6). One row per condition
+/// per patient: a patient presenting with both anxiety and insomnia is two
+/// rows sharing a `patientEntryId`.
+model ConditionEntry {
+  id String @id @default(cuid())
+
+  patientEntryId String
+  patientEntry   PatientEntry @relation(fields: [patientEntryId], references: [id], onDelete: Cascade)
 
   /// ConditionCategory code — see enums.ts
   category String
@@ -134,7 +170,7 @@ model ConditionEntry {
 
   createdAt DateTime @default(now())
 
-  @@index([dailyLogId])
+  @@index([patientEntryId])
   @@index([category])
   @@index([conditionCode])
   @@index([alsoSeeingGp])
@@ -203,4 +239,105 @@ model ReminderDispatch {
   @@unique([practitionerId, logDate, channel])
   @@index([logDate])
   @@index([status])
+}
+
+/* ------------------------------------------------------------------ *
+ * Google sign-in (Better Auth)
+ *
+ * These four tables are Better Auth's own storage, kept deliberately
+ * separate from `Practitioner`/`Session` above. Better Auth answers one
+ * question only — "has Google confirmed this person owns this email
+ * address?" — and the app's own session is minted from the answer. That
+ * keeps the study's model of a participant (a consenting Practitioner
+ * with a reminder link) unchanged, and means the Google integration can
+ * be switched off by removing two env vars without touching a row of
+ * research data.
+ *
+ * The `Auth` prefix avoids colliding with the existing `Session` model.
+ * Better Auth is pointed at these via `modelName` in
+ * src/lib/server/googleAuth.ts, which must use the camelCase Prisma client
+ * accessor (`authUser`, not `AuthUser`) because the adapter looks the model
+ * up as `db[modelName]`.
+ *
+ * POPIA: nothing here is patient data. It is the practitioner's own
+ * Google profile, and like Practitioner.email it must never appear in a
+ * dashboard response or an export.
+ * ------------------------------------------------------------------ */
+
+/// A verified Google identity. Linked to a Practitioner by email at
+/// sign-in time — there is deliberately no foreign key, so an identity
+/// that has not signed up yet is simply an identity with no participant.
+model AuthUser {
+  id            String  @id @default(cuid())
+  name          String
+  email         String  @unique
+  emailVerified Boolean @default(false)
+  image         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+
+  sessions AuthSession[]
+  accounts AuthAccount[]
+
+  @@map("auth_user")
+}
+
+/// Better Auth's short-lived session. Not the app's session: this one only
+/// carries the caller from the Google redirect to the handoff route.
+model AuthSession {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+
+  userId String
+  user   AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("auth_session")
+}
+
+/// The link between an AuthUser and the provider that vouched for them.
+model AuthAccount {
+  id         String @id @default(cuid())
+  accountId  String
+  providerId String
+
+  userId String
+  user   AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  /// Unused: password sign-in is not enabled. Better Auth's schema requires
+  /// the column, so it is present and always null.
+  password              String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("auth_account")
+}
+
+/// OAuth state and one-time values. Rows are short-lived and self-expiring.
+model AuthVerification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+
+  @@index([identifier])
+  @@map("auth_verification")
 }

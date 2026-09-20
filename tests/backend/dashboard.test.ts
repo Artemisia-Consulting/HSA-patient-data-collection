@@ -20,6 +20,10 @@ let practitionerToken: string
 let practitionerA: { id: string; email: string }
 let practitionerB: { id: string; email: string }
 
+/** `count` patients of one type with nothing itemised, numbered from `from`. */
+const blankPatients = (patientType: 'NEW' | 'FOLLOW_UP', count: number, from: number) =>
+  Array.from({ length: count }, (_, i) => ({ patientType, position: from + i }))
+
 beforeAll(async () => {
   await initTestDb()
 })
@@ -43,40 +47,58 @@ beforeEach(async () => {
   })
   practitionerToken = await issueSession(practitionerA.id)
 
+  // 12 patients over 3 days, 3 conditions itemised between them.
+  //
+  // Both of the 1 October conditions sit on the *same* new patient. That is the
+  // case the day-level model could not express, and it is what makes
+  // `patientsWithMultipleConditions` and the per-patient filters testable.
   await prisma.dailyLog.create({
     data: {
       practitionerId: practitionerA.id,
       logDate: '2026-10-01',
       newPatients: 5,
       followUpPatients: 2,
-      conditions: {
+      patients: {
         create: [
           {
-            category: 'MENTAL_HEALTH',
-            conditionCode: 'MH_ANXIETY',
-            diagnosisBasis: 'CLINICAL_DIAGNOSIS',
-            alsoSeeingGp: 'YES',
-            referredByGp: 'YES',
+            patientType: 'NEW',
+            position: 1,
+            conditions: {
+              create: [
+                {
+                  category: 'MENTAL_HEALTH',
+                  conditionCode: 'MH_ANXIETY',
+                  diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+                  alsoSeeingGp: 'YES',
+                  referredByGp: 'YES',
+                },
+                {
+                  category: 'COMMUNICABLE',
+                  conditionCode: 'CD_TB',
+                  diagnosisBasis: 'PATIENT_REPORTED_PRIOR',
+                  alsoSeeingGp: 'NO',
+                  referredByGp: 'NO',
+                },
+              ],
+            },
           },
-          {
-            category: 'COMMUNICABLE',
-            conditionCode: 'CD_TB',
-            diagnosisBasis: 'PATIENT_REPORTED_PRIOR',
-            alsoSeeingGp: 'NO',
-            referredByGp: 'NO',
-          },
+          // Seen, nothing itemised.
+          ...blankPatients('NEW', 4, 2),
+          ...blankPatients('FOLLOW_UP', 2, 1),
         ],
       },
     },
   })
 
-  // A day with counts but nothing itemised — it must still reach the export.
+  // A day where everyone was seen but nothing was itemised — it must still
+  // reach the export.
   await prisma.dailyLog.create({
     data: {
       practitionerId: practitionerA.id,
       logDate: '2026-10-02',
       newPatients: 0,
       followUpPatients: 3,
+      patients: { create: blankPatients('FOLLOW_UP', 3, 1) },
     },
   })
 
@@ -86,15 +108,24 @@ beforeEach(async () => {
       logDate: '2026-10-02',
       newPatients: 1,
       followUpPatients: 1,
-      conditions: {
+      patients: {
         create: [
           {
-            category: 'WOMENS_HEALTH_HORMONES',
-            conditionCode: 'WH_MENOPAUSE',
-            diagnosisBasis: 'PRESENTING_COMPLAINT_ONLY',
-            alsoSeeingGp: 'UNSURE',
-            referredByGp: 'NOT_APPLICABLE',
+            patientType: 'NEW',
+            position: 1,
+            conditions: {
+              create: [
+                {
+                  category: 'WOMENS_HEALTH_HORMONES',
+                  conditionCode: 'WH_MENOPAUSE',
+                  diagnosisBasis: 'PRESENTING_COMPLAINT_ONLY',
+                  alsoSeeingGp: 'UNSURE',
+                  referredByGp: 'NOT_APPLICABLE',
+                },
+              ],
+            },
           },
+          ...blankPatients('FOLLOW_UP', 1, 1),
         ],
       },
     },
@@ -205,7 +236,34 @@ describe('GET /api/dashboard/summary (FR8)', () => {
     expect(body.totals.followUpPatients).toBe(4)
   })
 
-  it('filters by category, counting only the matching entries', async () => {
+  it('counts patients who presented with more than one condition', async () => {
+    const body = dashboardSummarySchema.parse(
+      await readJson(
+        await summary(
+          apiRequest('/api/dashboard/summary', { token: researcherToken }),
+          undefined,
+        ),
+      ),
+    )
+    expect(body.patientsWithMultipleConditions).toBe(1)
+  })
+
+  it('splits patients and entries by new vs returning', async () => {
+    const body = dashboardSummarySchema.parse(
+      await readJson(
+        await summary(
+          apiRequest('/api/dashboard/summary', { token: researcherToken }),
+          undefined,
+        ),
+      ),
+    )
+    expect(body.byPatientType).toEqual([
+      { patientType: 'NEW', patients: 6, entries: 3 },
+      { patientType: 'FOLLOW_UP', patients: 6, entries: 0 },
+    ])
+  })
+
+  it('filters by category down to the matching patients, not their whole day', async () => {
     const body = dashboardSummarySchema.parse(
       await readJson(
         await summary(
@@ -218,7 +276,10 @@ describe('GET /api/dashboard/summary (FR8)', () => {
     )
     expect(body.totals.logDays).toBe(1)
     expect(body.totals.conditionEntries).toBe(1)
-    expect(body.totals.newPatients).toBe(5)
+    // One patient matched — not the other four new patients seen that day, who
+    // are what the day-level count would have reported.
+    expect(body.totals.newPatients).toBe(1)
+    expect(body.totals.followUpPatients).toBe(0)
   })
 
   it('filters by referral status', async () => {
@@ -247,6 +308,24 @@ describe('GET /api/dashboard/summary (FR8)', () => {
     // The day with zero new patients drops out.
     expect(body.totals.logDays).toBe(2)
     expect(body.totals.newPatients).toBe(6)
+    expect(body.totals.followUpPatients).toBe(0)
+  })
+
+  it('applies the patient filter and the entry filter to the same patient', async () => {
+    const body = dashboardSummarySchema.parse(
+      await readJson(
+        await summary(
+          apiRequest('/api/dashboard/summary?patientType=followup&category=MENTAL_HEALTH', {
+            token: researcherToken,
+          }),
+          undefined,
+        ),
+      ),
+    )
+    // Anxiety was recorded, and returning patients were seen — but never the
+    // same patient, so nothing matches. A day-level filter would have said 1.
+    expect(body.totals.logDays).toBe(0)
+    expect(body.totals.conditionEntries).toBe(0)
   })
 
   it('400s on a filter value that is not in the contract', async () => {
@@ -282,17 +361,58 @@ describe('GET /api/dashboard/summary (FR8)', () => {
 })
 
 describe('GET /api/dashboard/entries (FR8)', () => {
-  it('flattens to one row per condition entry, keeping days with none', async () => {
+  it('flattens to one row per condition, keeping patients with none', async () => {
     const response = await entries(
       apiRequest('/api/dashboard/entries', { token: researcherToken }),
       undefined,
     )
     const body = dashboardEntriesResponseSchema.parse(await readJson(response))
 
-    expect(body.totalRows).toBe(4)
+    // 12 patients, 3 of them carrying a condition; the other 10 rows are
+    // patients seen with nothing itemised, which is still a record.
+    expect(body.totalRows).toBe(13)
     const empty = body.rows.filter((row) => row.conditionCode === null)
-    expect(empty).toHaveLength(1)
-    expect(empty[0].followUpPatients).toBe(3)
+    expect(empty).toHaveLength(10)
+    expect(empty.every((row) => row.patientId !== null)).toBe(true)
+  })
+
+  it('groups a multi-condition patient under one patientId', async () => {
+    const body = dashboardEntriesResponseSchema.parse(
+      await readJson(
+        await entries(apiRequest('/api/dashboard/entries', { token: researcherToken }), undefined),
+      ),
+    )
+    const anxiety = body.rows.find((row) => row.conditionCode === 'MH_ANXIETY')
+    const tb = body.rows.find((row) => row.conditionCode === 'CD_TB')
+    expect(anxiety?.patientId).toBeTruthy()
+    expect(tb?.patientId).toBe(anxiety?.patientId)
+    expect(anxiety?.patientType).toBe('NEW')
+  })
+
+  it('keeps a day recorded before patients were itemised', async () => {
+    // Rows written by the day-level version of the app have counts and no
+    // patient rows at all. They still belong in the export.
+    await prisma.dailyLog.create({
+      data: {
+        practitionerId: practitionerB.id,
+        logDate: '2026-10-05',
+        newPatients: 4,
+        followUpPatients: 1,
+      },
+    })
+
+    const body = dashboardEntriesResponseSchema.parse(
+      await readJson(
+        await entries(
+          apiRequest('/api/dashboard/entries?from=2026-10-05', { token: researcherToken }),
+          undefined,
+        ),
+      ),
+    )
+    expect(body.rows).toHaveLength(1)
+    expect(body.rows[0].patientId).toBeNull()
+    expect(body.rows[0].patientType).toBeNull()
+    expect(body.rows[0].newPatients).toBe(4)
   })
 
   it('labels conditions from the taxonomy table', async () => {
@@ -324,7 +444,7 @@ describe('GET /api/dashboard/entries (FR8)', () => {
     )
     expect(body.page).toBe(2)
     expect(body.pageSize).toBe(2)
-    expect(body.totalRows).toBe(4)
+    expect(body.totalRows).toBe(13)
     expect(body.rows).toHaveLength(2)
   })
 
@@ -379,7 +499,19 @@ describe('GET /api/dashboard/export (FR8)', () => {
     const lines = csv.replace(/^﻿/, '').trim().split('\r\n')
 
     expect(lines[0]).toBe(EXPORT_COLUMNS.join(','))
-    expect(lines).toHaveLength(5) // header + 4 rows
+    expect(lines).toHaveLength(14) // header + 13 rows
+  })
+
+  it('carries the patient columns, so two conditions can be tied to one visit', async () => {
+    const csv = await csvFor()
+    expect(EXPORT_COLUMNS).toContain('patientId')
+    expect(EXPORT_COLUMNS).toContain('patientType')
+
+    const lines = csv.replace(/^\ufeff/, '').trim().split('\r\n')
+    const column = EXPORT_COLUMNS.indexOf('patientId')
+    const idsOf = (code: string) =>
+      lines.filter((line) => line.includes(code)).map((line) => line.split(',')[column])
+    expect(idsOf('MH_ANXIETY')).toEqual(idsOf('CD_TB'))
   })
 
   it('opens correctly in Excel (the bytes start with a UTF-8 BOM)', async () => {
@@ -409,12 +541,12 @@ describe('GET /api/dashboard/export (FR8)', () => {
   })
 
   it('neutralises a spreadsheet formula in free text', async () => {
-    const log = await prisma.dailyLog.findFirstOrThrow({
-      where: { practitionerId: practitionerB.id },
+    const patient = await prisma.patientEntry.findFirstOrThrow({
+      where: { dailyLog: { practitionerId: practitionerB.id } },
     })
     await prisma.conditionEntry.create({
       data: {
-        dailyLogId: log.id,
+        patientEntryId: patient.id,
         category: 'OTHER',
         conditionCode: otherConditionCode('OTHER'),
         conditionOther: '=HYPERLINK("http://evil","click")',

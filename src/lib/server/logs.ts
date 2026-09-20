@@ -6,36 +6,46 @@
  * practitioner who submits twice corrects their day, they do not create a
  * second one.
  *
- * Condition entries are replaced wholesale on each write. They have no
- * client-visible identity between submissions, so reconciling them one by one
- * would buy nothing and risk leaving orphans behind.
+ * Patients and their condition entries are replaced wholesale on each write.
+ * They have no client-visible identity between submissions, so reconciling them
+ * one by one would buy nothing and risk leaving orphans behind.
  *
  * OWNERSHIP: Stream 1 (backend).
  */
 import {
   COLLECTION_END_DATE,
-  COLLECTION_START_DATE,
+  EARLY_ENTRY_FROM_DATE,
   formatLogDateLong,
-  isWithinCollectionWindow,
+  isWritableLogDate,
   todayInSast,
 } from '@/lib/dates'
-import { isOtherCondition, type DailyLogRequest } from '@/lib/contract'
+import {
+  isOtherCondition,
+  type ConditionEntryInput,
+  type DailyLogRequest,
+  type PatientEntryInput,
+} from '@/lib/contract'
 import { prisma } from '@/lib/db'
+import type { Prisma } from '@/generated/prisma'
 
 import { ApiException, validationException } from './errors'
 import { lookupConditions } from './taxonomy'
-import type { DailyLogWithConditions } from './serialise'
+import { LOG_PATIENT_INCLUDE, type DailyLogWithPatients } from './serialise'
 
 /**
- * A log may only be written for a date inside the collection window, and never
- * for a day that has not happened yet in SAST. Reads are not restricted: a
- * practitioner can always look at what they submitted.
+ * A log may only be written for a writable date, and never for a day that has
+ * not happened yet in SAST. Reads are not restricted: a practitioner can
+ * always look at what they submitted.
+ *
+ * Writable is wider than the collection window — days before 1 October are
+ * accepted so the app can be used before the study opens — but those days are
+ * not part of the research. See `isWritableLogDate`.
  */
 export function assertWritableDate(logDate: string, now: Date = new Date()): void {
-  if (!isWithinCollectionWindow(logDate)) {
+  if (!isWritableLogDate(logDate)) {
     throw new ApiException(
       'OUTSIDE_COLLECTION_WINDOW',
-      `The collection runs from ${formatLogDateLong(COLLECTION_START_DATE)} to ` +
+      `Entries can be logged from ${formatLogDateLong(EARLY_ENTRY_FROM_DATE)} to ` +
         `${formatLogDateLong(COLLECTION_END_DATE)}. You can't log for ` +
         `${formatLogDateLong(logDate)}.`,
       { logDate: ['Date is outside the collection window'] },
@@ -53,19 +63,19 @@ export function assertWritableDate(logDate: string, now: Date = new Date()): voi
 export async function getLog(
   practitionerId: string,
   logDate: string,
-): Promise<DailyLogWithConditions | null> {
+): Promise<DailyLogWithPatients | null> {
   return prisma.dailyLog.findUnique({
     where: { practitionerId_logDate: { practitionerId, logDate } },
-    include: { conditions: { orderBy: { createdAt: 'asc' } } },
+    include: LOG_PATIENT_INCLUDE,
   })
 }
 
 export async function listLogs(
   practitionerId: string,
-): Promise<DailyLogWithConditions[]> {
+): Promise<DailyLogWithPatients[]> {
   return prisma.dailyLog.findMany({
     where: { practitionerId },
-    include: { conditions: { orderBy: { createdAt: 'asc' } } },
+    include: LOG_PATIENT_INCLUDE,
     orderBy: { logDate: 'desc' },
     // The window is 31 days; the cap only matters for pre-launch test rows.
     take: 200,
@@ -73,69 +83,98 @@ export async function listLogs(
 }
 
 /**
- * Validate condition entries against the live taxonomy table.
+ * Validate a day's patients against the live taxonomy table.
  *
- * Zod has already checked the shape; this checks the *meaning*: the code has to
- * exist, still be active, and actually belong to the category the client sent.
- * Free text is dropped for anything that is not an "Other (specify)" row —
- * there is no route by which arbitrary text can be attached to a normal
- * condition, which matters because free text is the one place patient-
- * identifying data could get in (POPIA).
+ * Zod has already checked the shape; this checks the *meaning*: each condition
+ * code has to exist, still be active, and actually belong to the category the
+ * client sent. Free text is dropped for anything that is not an
+ * "Other (specify)" row — there is no route by which arbitrary text can be
+ * attached to a normal condition, which matters because free text is the one
+ * place patient-identifying data could get in (POPIA).
+ *
+ * Field errors carry their full path (`patients.2.conditions.0.conditionCode`)
+ * so the form can mark the offending control on the right patient card rather
+ * than just somewhere in the day.
  */
-export async function validateConditionEntries(
-  entries: DailyLogRequest['conditions'],
-): Promise<
-  Array<{
-    category: string
-    conditionCode: string
-    conditionOther: string | null
-    diagnosisBasis: string
-    alsoSeeingGp: string
-    referredByGp: string
-  }>
-> {
-  const known = await lookupConditions(entries.map((e) => e.conditionCode))
+type ValidatedCondition = {
+  category: string
+  conditionCode: string
+  conditionOther: string | null
+  diagnosisBasis: string
+  alsoSeeingGp: string
+  referredByGp: string
+}
 
-  return entries.map((entry, index) => {
-    const condition = known.get(entry.conditionCode)
-    if (!condition) {
-      throw validationException(
-        `conditions.${index}.conditionCode`,
-        'That condition is not on the list',
-      )
-    }
-    if (!condition.isActive) {
-      throw validationException(
-        `conditions.${index}.conditionCode`,
-        'That condition has been retired from the list',
-      )
-    }
-    if (condition.category !== entry.category) {
-      throw validationException(
-        `conditions.${index}.category`,
-        'That condition belongs to a different category',
-      )
-    }
+type ValidatedPatient = {
+  patientType: string
+  position: number
+  conditions: ValidatedCondition[]
+}
+
+export async function validatePatientEntries(
+  patients: PatientEntryInput[],
+): Promise<ValidatedPatient[]> {
+  const known = await lookupConditions(
+    patients.flatMap((patient) => patient.conditions.map((e) => e.conditionCode)),
+  )
+
+  // Positions run 1..n *within a type*, so "new patient 3" keeps meaning the
+  // third card under New however the two lists are interleaved in the payload.
+  const nextPosition = new Map<string, number>()
+
+  return patients.map((patient, patientIndex) => {
+    const position = (nextPosition.get(patient.patientType) ?? 0) + 1
+    nextPosition.set(patient.patientType, position)
 
     return {
-      category: entry.category,
-      conditionCode: entry.conditionCode,
-      conditionOther: isOtherCondition(entry.conditionCode)
-        ? (entry.conditionOther ?? null)
-        : null,
-      diagnosisBasis: entry.diagnosisBasis,
-      alsoSeeingGp: entry.alsoSeeingGp,
-      referredByGp: entry.referredByGp,
+      patientType: patient.patientType,
+      position,
+      conditions: patient.conditions.map((entry, entryIndex) => {
+        const path = `patients.${patientIndex}.conditions.${entryIndex}`
+        const condition = known.get(entry.conditionCode)
+        if (!condition) {
+          throw validationException(
+            `${path}.conditionCode`,
+            'That condition is not on the list',
+          )
+        }
+        if (!condition.isActive) {
+          throw validationException(
+            `${path}.conditionCode`,
+            'That condition has been retired from the list',
+          )
+        }
+        if (condition.category !== entry.category) {
+          throw validationException(
+            `${path}.category`,
+            'That condition belongs to a different category',
+          )
+        }
+        return toValidatedCondition(entry)
+      }),
     }
   })
+}
+
+function toValidatedCondition(entry: ConditionEntryInput): ValidatedCondition {
+  return {
+    category: entry.category,
+    conditionCode: entry.conditionCode,
+    conditionOther: isOtherCondition(entry.conditionCode)
+      ? (entry.conditionOther ?? null)
+      : null,
+    diagnosisBasis: entry.diagnosisBasis,
+    alsoSeeingGp: entry.alsoSeeingGp,
+    referredByGp: entry.referredByGp,
+  }
 }
 
 export async function upsertLog(
   practitionerId: string,
   logDate: string,
   body: DailyLogRequest,
-): Promise<{ log: DailyLogWithConditions; created: boolean }> {
-  const conditions = await validateConditionEntries(body.conditions)
+): Promise<{ log: DailyLogWithPatients; created: boolean }> {
+  const patients = await validatePatientEntries(body.patients)
 
   const existing = await prisma.dailyLog.findUnique({
     where: { practitionerId_logDate: { practitionerId, logDate } },
@@ -144,7 +183,10 @@ export async function upsertLog(
 
   const log = await prisma.$transaction(async (tx) => {
     if (existing) {
-      await tx.conditionEntry.deleteMany({ where: { dailyLogId: existing.id } })
+      // Deleting the patients takes their conditions with them (onDelete:
+      // Cascade), so a corrected day cannot leave the previous version's
+      // entries behind.
+      await tx.patientEntry.deleteMany({ where: { dailyLogId: existing.id } })
       await tx.dailyLog.update({
         where: { id: existing.id },
         data: {
@@ -152,31 +194,54 @@ export async function upsertLog(
           followUpPatients: body.followUpPatients,
         },
       })
-      if (conditions.length > 0) {
-        await tx.conditionEntry.createMany({
-          data: conditions.map((c) => ({ ...c, dailyLogId: existing.id })),
-        })
-      }
+      await createPatients(tx, existing.id, patients)
       return tx.dailyLog.findUniqueOrThrow({
         where: { id: existing.id },
-        include: { conditions: { orderBy: { createdAt: 'asc' } } },
+        include: LOG_PATIENT_INCLUDE,
       })
     }
 
-    const created = await tx.dailyLog.create({
+    return tx.dailyLog.create({
       data: {
         practitionerId,
         logDate,
         newPatients: body.newPatients,
         followUpPatients: body.followUpPatients,
-        conditions: { create: conditions },
+        patients: {
+          create: patients.map((patient) => ({
+            patientType: patient.patientType,
+            position: patient.position,
+            conditions: { create: patient.conditions },
+          })),
+        },
       },
-      include: { conditions: { orderBy: { createdAt: 'asc' } } },
+      include: LOG_PATIENT_INCLUDE,
     })
-    return created
   })
 
   return { log, created: !existing }
+}
+
+/**
+ * `createMany` cannot create the nested conditions, so each patient is its own
+ * insert. A day is a few dozen patients at most and this runs inside the
+ * transaction, so the extra round trips are not worth avoiding with raw SQL.
+ */
+async function createPatients(
+  tx: Prisma.TransactionClient,
+  dailyLogId: string,
+  patients: ValidatedPatient[],
+): Promise<void> {
+  for (const patient of patients) {
+    await tx.patientEntry.create({
+      data: {
+        dailyLogId,
+        patientType: patient.patientType,
+        position: patient.position,
+        conditions: { create: patient.conditions },
+      },
+    })
+  }
 }
 
 /* ------------------------------------------------------------------ *

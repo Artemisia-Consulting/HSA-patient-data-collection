@@ -64,4 +64,6 @@ export const RATE_LIMITS = {
   signup: { limit: 20, windowMs: 60 * 60 * 1000 },
   /** Resume: caps brute-forcing of reminder link ids. */
   resume: { limit: 30, windowMs: 15 * 60 * 1000 },
+  /** Researcher code: a short shared secret, so the tightest ceiling. */
+  researcher: { limit: 10, windowMs: 15 * 60 * 1000 },
 } as const
