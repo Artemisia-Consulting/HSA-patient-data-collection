@@ -7,7 +7,7 @@
  * In Node (vitest) there is no localStorage, so it falls back to a module-level
  * object — the tests get a clean store per process.
  *
- * OWNER: Stream 2. Delete this whole folder at integration.
+ * OWNER: Stream 2. Kept after integration for offline dev; see mock/server.ts.
  */
 import type { DailyLog, Practitioner } from '../../contract/api'
 

@@ -17,7 +17,9 @@
  * What it does NOT reproduce: rate limiting, the collection-window 422, and
  * cookie-based auth. See docs/streams/frontend.md.
  *
- * OWNER: Stream 2. Delete this whole folder at integration.
+ * OWNER: Stream 2. Kept after integration rather than deleted: it is the
+ * fixture the contract tests parse, and the offline dev mode. It is off
+ * unless NEXT_PUBLIC_USE_MOCK_API=true (see transport.ts).
  */
 import {
   type AuthSessionResponse,

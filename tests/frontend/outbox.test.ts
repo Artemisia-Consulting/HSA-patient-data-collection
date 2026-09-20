@@ -12,6 +12,10 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { installBrowserEnv, resetBrowserEnv, storage } from './helpers/browser-env'
 
+// The offline paths run against the mock transport (see transport.ts), which
+// is opt-in since integration. Switch it on before any client module loads.
+process.env.NEXT_PUBLIC_USE_MOCK_API = 'true'
+
 installBrowserEnv()
 
 const { setMockLatency, setMockOffline } = await import(

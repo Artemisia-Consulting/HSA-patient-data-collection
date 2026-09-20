@@ -2,10 +2,11 @@
  * The single seam between the practitioner frontend and the backend.
  *
  * Everything in `src/lib/client` goes through `apiFetch`, which has the exact
- * signature of `fetch`. While Agent 1's routes do not exist, it is pointed at
- * an in-browser mock that returns the same status codes, headers and JSON
- * bodies the real routes will. Swapping to the real API at integration is the
- * one line marked below (or setting NEXT_PUBLIC_USE_MOCK_API=false).
+ * signature of `fetch`. Since integration it points at the real API routes by
+ * default. The in-browser mock is opt-in (NEXT_PUBLIC_USE_MOCK_API=true) for
+ * developing without a database; the frontend test suite switches it on per
+ * file. A mock that is on by default is one forgotten env var away from
+ * writing October's data into a localStorage stub, so the default is real.
  *
  * Because the mock hands back genuine `Response` objects, the parsing, error
  * mapping and 409/401/422 branches in `http.ts` are the *same* code path in
@@ -15,9 +16,8 @@
  */
 import { mockFetch } from './mock/server'
 
-/** ← THE one-line swap. Set to `false` (or NEXT_PUBLIC_USE_MOCK_API=false). */
-export const USE_MOCK_API =
-  (process.env.NEXT_PUBLIC_USE_MOCK_API ?? 'true') !== 'false'
+/** ← THE one-line swap. Real API by default; mock only when explicitly asked. */
+export const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === 'true'
 
 export function apiFetch(
   path: string,

@@ -18,6 +18,10 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { installBrowserEnv, resetBrowserEnv } from './helpers/browser-env'
 
+// The mock is opt-in since integration (see transport.ts). This suite tests
+// the mock itself, so it switches it on before any client module is imported.
+process.env.NEXT_PUBLIC_USE_MOCK_API = 'true'
+
 installBrowserEnv()
 
 const { setMockLatency, setMockOffline } = await import(
