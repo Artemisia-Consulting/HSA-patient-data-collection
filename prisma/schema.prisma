@@ -1,0 +1,206 @@
+// HSA Patient Data Collection — shared database schema.
+//
+// OWNERSHIP: this file is owned by the integration lead. Agents 1/2/3 read it
+// but must NOT edit it. If a field is missing for your slice, report it rather
+// than adding it yourself — a schema edit in one worktree breaks the others.
+//
+// POPIA: there is deliberately no patient-identifying column anywhere below.
+// A ConditionEntry records *what was treated*, never *who*. Practitioner.email
+// is the only personal datum in the system and must never leave the server in
+// any dashboard/export response — use Practitioner.id as the anonymised key.
+//
+// Enum-like columns are plain String because SQLite has no native enum type.
+// The permitted values live in src/lib/contract/enums.ts and are enforced by
+// Zod at every API boundary. Keep the two in sync.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  // SQLite for local dev so every agent can run the app with zero setup.
+  // Production swaps to Postgres: change provider to "postgresql" and point
+  // DATABASE_URL at the managed instance. No SQLite-only features are used.
+  // The connection URL lives in prisma.config.ts (Prisma 7 driver adapters).
+  provider = "sqlite"
+}
+
+/// A homeopathic practitioner taking part in the October 2026 collection.
+/// `id` is the anonymised identifier used in every dashboard and export.
+model Practitioner {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  fullName     String
+  practiceName String?
+  province     String?
+
+  /// Unguessable id embedded in personalised reminder links. Authenticates a
+  /// practitioner arriving on a new device or with cleared storage (FR1).
+  reminderLinkId String @unique @default(cuid())
+
+  /// Self-declared consent: signing up *is* the consent event (User story 1.6).
+  consentAt   DateTime  @default(now())
+  /// Set the first time the practitioner completes onboarding (FR2).
+  onboardedAt DateTime?
+
+  /// PRACTITIONER | RESEARCHER — gates the researcher dashboard.
+  role String @default("PRACTITIONER")
+
+  // --- Reminder preferences (FR7) ---
+  /// NONE | EMAIL | WHATSAPP
+  reminderChannel    String    @default("NONE")
+  /// "HH:mm" in SAST (Africa/Johannesburg). Default 18:00.
+  reminderTime       String    @default("18:00")
+  reminderIncludeSat Boolean   @default(false)
+  whatsappNumber     String?
+  reminderOptInAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions   Session[]
+  dailyLogs  DailyLog[]
+  dispatches ReminderDispatch[]
+  overrides  DayOverride[]
+
+  @@index([reminderChannel])
+}
+
+/// On-device session so a practitioner never re-enters their email (FR1).
+model Session {
+  id String @id @default(cuid())
+
+  /// SHA-256 of the bearer token. The raw token is returned once at signup
+  /// and never stored, so a database leak cannot be replayed as a login.
+  tokenHash String @unique
+
+  practitionerId String
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+
+  @@index([practitionerId])
+  @@index([expiresAt])
+}
+
+/// One row per practitioner per calendar day (FR3).
+model DailyLog {
+  id String @id @default(cuid())
+
+  practitionerId String
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+
+  /// SAST calendar date as "yyyy-MM-dd". Stored as a string on purpose: a
+  /// DateTime would be UTC-normalised, and an 18:00 SAST log would land on the
+  /// previous UTC day, silently corrupting daily counts and reminder logic.
+  logDate String
+
+  newPatients      Int @default(0)
+  followUpPatients Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conditions ConditionEntry[]
+
+  @@unique([practitionerId, logDate])
+  @@index([logDate])
+}
+
+/// A condition treated on a given day (FR4/FR5/FR6). One row per condition,
+/// not per patient — practitioners tick all that apply to keep entry under 30s.
+model ConditionEntry {
+  id String @id @default(cuid())
+
+  dailyLogId String
+  dailyLog   DailyLog @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
+
+  /// ConditionCategory code — see enums.ts
+  category String
+  /// Condition.code from the taxonomy table, or "OTHER" for free text.
+  conditionCode String
+  /// Free text, only when conditionCode == "OTHER". Never clinical notes.
+  conditionOther String?
+
+  /// CLINICAL_DIAGNOSIS | PATIENT_REPORTED_PRIOR | PRESENTING_COMPLAINT_ONLY
+  diagnosisBasis String @default("CLINICAL_DIAGNOSIS")
+  /// YES | NO | UNSURE — "also seeing a GP for this?"
+  alsoSeeingGp String @default("UNSURE")
+  /// YES | NO | NOT_APPLICABLE — "referred by a GP?"
+  referredByGp String @default("NOT_APPLICABLE")
+
+  createdAt DateTime @default(now())
+
+  @@index([dailyLogId])
+  @@index([category])
+  @@index([conditionCode])
+  @@index([alsoSeeingGp])
+}
+
+/// The condition taxonomy, held in the database rather than in code so the
+/// research team can extend the list during October without a redeploy
+/// (rubric item 5, tier 3). Seeded from src/lib/contract/taxonomy.ts.
+model Condition {
+  code     String @id
+  category String
+  label    String
+
+  /// Pipe-separated search aliases, e.g. "TB|Mycobacterium|consumption".
+  synonyms String @default("")
+  /// Typeahead ordering — lower sorts first, so common conditions lead.
+  rank     Int     @default(100)
+  isActive Boolean @default(true)
+
+  @@index([category])
+  @@index([isActive])
+}
+
+/// "Mark done for today" / snooze. Lets a practitioner suppress a reminder on a
+/// day they saw no patients, without fabricating a DailyLog row (FR7).
+model DayOverride {
+  id String @id @default(cuid())
+
+  practitionerId String
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+
+  /// SAST "yyyy-MM-dd", same convention as DailyLog.logDate.
+  logDate String
+
+  markedDoneAt DateTime?
+  snoozedUntil DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([practitionerId, logDate])
+}
+
+/// Audit trail of reminder sends. The unique constraint is what guarantees a
+/// practitioner is never messaged twice for the same day on the same channel.
+model ReminderDispatch {
+  id String @id @default(cuid())
+
+  practitionerId String
+  practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+
+  /// The SAST "yyyy-MM-dd" this reminder is for.
+  logDate String
+  /// EMAIL | WHATSAPP
+  channel String
+  /// PENDING | SENT | FAILED | SKIPPED
+  status String @default("PENDING")
+  /// ALREADY_LOGGED | MARKED_DONE | SNOOZED | NOT_OPTED_IN | NON_WORKING_DAY
+  skipReason String?
+  error      String?
+
+  scheduledFor DateTime
+  sentAt       DateTime?
+  createdAt    DateTime @default(now())
+
+  @@unique([practitionerId, logDate, channel])
+  @@index([logDate])
+  @@index([status])
+}

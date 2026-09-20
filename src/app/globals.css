@@ -1,0 +1,44 @@
+@import 'tailwindcss';
+
+@theme {
+  /* HSA palette — a calm clinical green, legible on a phone outdoors. */
+  --color-hsa-50: oklch(0.97 0.02 155);
+  --color-hsa-100: oklch(0.94 0.04 155);
+  --color-hsa-500: oklch(0.58 0.11 155);
+  --color-hsa-600: oklch(0.5 0.11 155);
+  --color-hsa-700: oklch(0.42 0.09 155);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.21 0.01 250);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.17 0.01 250);
+    --foreground: oklch(0.95 0.005 250);
+  }
+}
+
+html {
+  /* Stop iOS Safari zooming when a number input is focused. */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Respect the notch on the phones this is actually used on. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* The brief mandates >44px touch targets. Enforce it centrally so no
+   individual screen has to remember. */
+button,
+[role='button'],
+input[type='submit'],
+select {
+  min-height: 44px;
+}
