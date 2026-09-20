@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en-ZA">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Matches the app's viewport: pinch-zoom stays available. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+    <meta name="theme-color" content="#2f6b4f" />
+    <title>Offline · HSA Daily Patient Log</title>
+    <link rel="icon" href="/favicon.ico" />
+    <style>
+      :root {
+        --bg: #fafafa;
+        --fg: #171717;
+        --muted: #525252;
+        --card: #ffffff;
+        --line: #e5e5e5;
+        --hsa: #2f6b4f;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0a0a0a;
+          --fg: #fafafa;
+          --muted: #a3a3a3;
+          --card: #171717;
+          --line: #262626;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 24px 16px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        line-height: 1.5;
+      }
+      main {
+        width: 100%;
+        max-width: 28rem;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+      }
+      h1 {
+        font-size: 1.375rem;
+        margin: 16px 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      button {
+        min-height: 48px;
+        width: 100%;
+        margin-top: 8px;
+        padding: 0 16px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--hsa);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icon-192.png" alt="" width="64" height="64" />
+      <h1>You&rsquo;re offline</h1>
+      <p>
+        This page hasn&rsquo;t been saved to your phone yet, so we can&rsquo;t open
+        it without a connection.
+      </p>
+      <p>
+        <strong>Nothing you&rsquo;ve already submitted is lost.</strong> Entries
+        saved on your phone send themselves as soon as you&rsquo;re back online.
+      </p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

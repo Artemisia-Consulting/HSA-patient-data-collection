@@ -1,15 +1,19 @@
 /**
- * Placeholder landing page. OWNED BY AGENT 2 — replace this with the real
- * entry point that routes to signup, onboarding or the log form depending on
- * session state.
+ * The app's front door. Resolves the session and forwards to signup, the
+ * walkthrough or the log form — see `EntryRouter`.
+ *
+ * Kept as a server component with a single client child so the shell is static
+ * and the first paint does not wait on any JavaScript decision.
+ *
+ * OWNER: Stream 2.
  */
+import { AppShell } from '@/components/shell/AppShell'
+import { EntryRouter } from '@/components/shell/EntryRouter'
+
 export default function Home() {
   return (
-    <main className="mx-auto max-w-md px-4 py-12">
-      <h1 className="text-2xl font-semibold">HSA Daily Patient Log</h1>
-      <p className="mt-2 text-sm opacity-70">
-        October 2026 data collection. Scaffolding in place — screens pending.
-      </p>
-    </main>
+    <AppShell showNav={false}>
+      <EntryRouter />
+    </AppShell>
   )
 }
