@@ -26,6 +26,15 @@ export default function SignupPage() {
         straight to the log form.
       </p>
       <SignupForm />
+      <p className="mt-6 border-t border-neutral-200 pt-4 text-center text-sm text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">
+        Are you a researcher?{' '}
+        <a
+          href="/researcher-signin"
+          className="font-medium text-green-700 hover:underline dark:text-green-400"
+        >
+          Sign in here
+        </a>
+      </p>
     </AppShell>
   )
 }

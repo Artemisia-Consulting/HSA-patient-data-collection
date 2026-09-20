@@ -15,6 +15,7 @@
  * OWNER: Stream 2.
  */
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useState, type ReactNode } from 'react'
 
 import { ServiceWorkerRegistrar } from '@/components/shell/ServiceWorkerRegistrar'
@@ -32,7 +33,14 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, showNav = true }: AppShellProps) {
+  const router = useRouter()
   const [navOpen, setNavOpen] = useState(false)
+
+  function handleSignOut() {
+    localStorage.removeItem('hsa.session')
+    document.cookie = 'hsa_session=; path=/; max-age=0'
+    router.push('/signup')
+  }
 
   return (
     <>
@@ -87,6 +95,18 @@ export function AppShell({ children, showNav = true }: AppShellProps) {
                     </Link>
                   </li>
                 ))}
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNavOpen(false)
+                      handleSignOut()
+                    }}
+                    className="flex w-full min-h-[48px] items-center border-b border-neutral-100 text-[15px] font-medium text-red-700 last:border-b-0 dark:border-neutral-800 dark:text-red-400"
+                  >
+                    Sign out
+                  </button>
+                </li>
               </ul>
             </nav>
           ) : null}
