@@ -105,9 +105,24 @@ product owner (user story 1.6).
 
 ## Parallel build
 
-Work is split across three streams building simultaneously in separate
-worktrees. Before touching anything, read [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md)
+Work was split across three streams building simultaneously in separate
+worktrees, then merged into main. Before touching anything, read [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md)
 — it says which files each stream owns and which are locked.
+
+Stream handoff notes (what was built, bug logs, what is NOT tested, integration asks):
+- [`docs/streams/backend.md`](docs/streams/backend.md) — Stream 1: API, schema, auth, dashboard
+- [`docs/streams/frontend.md`](docs/streams/frontend.md) — Stream 2: practitioner PWA
+- [`docs/streams/reminders.md`](docs/streams/reminders.md) — Stream 3: reminder/engagement layer
+
+## Verification status
+
+As of the merge (2026-09-20):
+- **Typecheck:** clean (`npm run typecheck`)
+- **Tests:** 234 passing across 14 files (`node node_modules/vitest/vitest.mjs run`)
+- **Build:** clean (`npm run build`)
+- **Smoke:** health, taxonomy, auth/me (401), signup all verified on dev server
+
+Note: on Windows, `npm test` may fail with "Vitest failed to find the runner" — use the direct invocation above. See bug logs in each stream's handoff note.
 
 ## Known issues
 
