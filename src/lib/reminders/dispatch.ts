@@ -26,7 +26,6 @@ import { readReminderConfig } from './config'
 import { createChannelRegistry, resolveChannel, type ChannelRegistry } from './channels'
 import { buildLogLink, buildManageLink, greetingNameFor, maskRecipient } from './message'
 import { decideDispatch, isDispatchableDate } from './schedule'
-import { createPrismaDispatchStore } from './store'
 import {
   systemClock,
   type Clock,
@@ -92,7 +91,10 @@ export async function runDispatch(
   const dryRun = options.dryRun ?? false
 
   const config = readReminderConfig()
-  const store = options.store ?? createPrismaDispatchStore()
+  // Loaded on demand so that supplying a store keeps Prisma — and therefore
+  // the generated client and a live database — out of the import graph. That
+  // is what lets tests/reminders exercise this engine with no setup at all.
+  const store = options.store ?? (await import('./store')).createPrismaDispatchStore()
   const registry = options.registry ?? createChannelRegistry(config)
   const appUrl = options.appUrl ?? config.appUrl
 
