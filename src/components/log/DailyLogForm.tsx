@@ -14,7 +14,7 @@
  *    values — 0 taps, visible without opening anything.
  *  - Submit is one tap on a bar that never scrolls away.
  *
- * That is 7 taps for a two-condition day. The measured walkthrough is in
+ * That is 7 taps for a two-condition day. The tap-by-tap walkthrough is in
  * docs/streams/frontend.md.
  *
  * Two failure paths are handled rather than assumed away: a submit that cannot
@@ -55,6 +55,7 @@ import {
   formFromDailyLog,
   formFromRequest,
   newDraftCondition,
+  shouldReplaceForm,
   toDailyLogRequest,
   totalPatients,
   validateForm,
@@ -97,8 +98,28 @@ export function DailyLogForm({
   const [submitState, setSubmitState] = useState<SubmitState>({ kind: 'editing' })
   const [wasExisting, setWasExisting] = useState(false)
 
-  const hydrated = useRef(false)
   const confirmationRef = useRef<HTMLDivElement | null>(null)
+
+  /**
+   * Has the practitioner touched the form since this date started loading?
+   *
+   * The screen is interactive before `loadForDate` resolves — deliberately, so
+   * the first tap never has to wait for the network. That leaves a window in
+   * which a late "there is nothing logged for today" reply could overwrite a
+   * tap that has already happened. See `applyLoaded`.
+   */
+  const dirty = useRef(false)
+  /** Discards a reply for a date the practitioner has already moved on from. */
+  const loadSeq = useRef(0)
+
+  /** Every user-initiated change goes through here, so `dirty` cannot drift. */
+  const editForm = useCallback(
+    (update: (current: EntryForm) => EntryForm) => {
+      dirty.current = true
+      setForm(update)
+    },
+    [],
+  )
 
   /* ---------------- taxonomy + remembered defaults ---------------- */
 
@@ -126,47 +147,55 @@ export function DailyLogForm({
 
   const loadForDate = useCallback(
     async (logDate: string) => {
+      const seq = ++loadSeq.current
+      const isStale = () => seq !== loadSeq.current
+
       setLoadingDate(true)
-      hydrated.current = false
+      dirty.current = false
       setConditionErrors({})
       setSubmitError(null)
       setSubmitState({ kind: 'editing' })
 
+      /** The one place a loaded day reaches the form. See shouldReplaceForm. */
+      const applyLoaded = (next: EntryForm, existing: boolean) => {
+        if (isStale()) return
+        setWasExisting(existing)
+        if (shouldReplaceForm(next, dirty.current)) setForm(next)
+      }
+
       const fallbackToLocal = () => {
         const draft = loadDraft(logDate)
-        setWasExisting(false)
-        setForm(draft ? formFromRequest(logDate, draft.body) : emptyForm(logDate))
+        applyLoaded(
+          draft ? formFromRequest(logDate, draft.body) : emptyForm(logDate),
+          false,
+        )
       }
 
       if (practice) {
-        setWasExisting(false)
-        setForm(emptyForm(logDate))
+        applyLoaded(emptyForm(logDate), false)
         setLoadingDate(false)
-        hydrated.current = true
         return
       }
 
       // A submit that is queued offline is the most recent truth for that day.
       const queued = pendingFor(logDate)
       if (queued) {
-        setWasExisting(true)
-        setForm(formFromRequest(logDate, queued.body))
+        applyLoaded(formFromRequest(logDate, queued.body), true)
         setLoadingDate(false)
-        hydrated.current = true
         return
       }
 
       try {
         const existing = await api.getLog(logDate)
-        setWasExisting(true)
-        setForm(formFromDailyLog(existing))
+        applyLoaded(formFromDailyLog(existing), true)
       } catch (error) {
         if (error instanceof ApiClientError && error.status === 404) fallbackToLocal()
         else if (error instanceof ApiNetworkError) fallbackToLocal()
         else fallbackToLocal()
       } finally {
-        setLoadingDate(false)
-        hydrated.current = true
+        if (!isStale()) {
+          setLoadingDate(false)
+        }
       }
     },
     [practice],
@@ -191,13 +220,16 @@ export function DailyLogForm({
 
   /* ---------------- autosave the in-progress entry ---------------- */
 
+  // Keyed on `loadingDate` rather than the `hydrated` ref so that a tap made
+  // *before* the load finished still gets written once it does — a ref change
+  // would not re-run this effect, and that entry would sit unsaved.
   useEffect(() => {
-    if (practice || !hydrated.current || submitState.kind !== 'editing') return
+    if (practice || loadingDate || submitState.kind !== 'editing') return
     const handle = window.setTimeout(() => {
       saveDraft(form.logDate, toDailyLogRequest(form))
     }, 400)
     return () => window.clearTimeout(handle)
-  }, [form, practice, submitState.kind])
+  }, [form, loadingDate, practice, submitState.kind])
 
   /* ---------------- derived ---------------- */
 
@@ -220,7 +252,7 @@ export function DailyLogForm({
 
   const toggleCondition = useCallback(
     (category: ConditionCategory, code: string) => {
-      setForm((current) => {
+      editForm((current) => {
         const existing = current.conditions.find((c) => c.conditionCode === code)
         if (existing) {
           return {
@@ -241,7 +273,7 @@ export function DailyLogForm({
   )
 
   const patchCondition = useCallback((key: string, patch: Partial<DraftCondition>) => {
-    setForm((current) => ({
+    editForm((current) => ({
       ...current,
       conditions: current.conditions.map((condition) =>
         condition.key === key ? { ...condition, ...patch } : condition,
@@ -256,7 +288,7 @@ export function DailyLogForm({
   }, [])
 
   const removeCondition = useCallback((key: string) => {
-    setForm((current) => ({
+    editForm((current) => ({
       ...current,
       conditions: current.conditions.filter((condition) => condition.key !== key),
     }))
@@ -385,14 +417,14 @@ export function DailyLogForm({
           label="New patients"
           hint="Seen for the first time"
           value={form.newPatients}
-          onChange={(newPatients) => setForm((current) => ({ ...current, newPatients }))}
+          onChange={(newPatients) => editForm((current) => ({ ...current, newPatients }))}
         />
         <CountPicker
           label="Follow-up patients"
           hint="Returning for an existing case"
           value={form.followUpPatients}
           onChange={(followUpPatients) =>
-            setForm((current) => ({ ...current, followUpPatients }))
+            editForm((current) => ({ ...current, followUpPatients }))
           }
         />
 

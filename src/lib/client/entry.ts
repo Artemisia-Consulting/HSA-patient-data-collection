@@ -180,6 +180,37 @@ export function totalPatients(form: EntryForm): number {
   return form.newPatients + form.followUpPatients
 }
 
+/** A day with nothing in it at all. */
+export function isEmptyEntry(form: EntryForm): boolean {
+  return (
+    form.newPatients === 0 &&
+    form.followUpPatients === 0 &&
+    form.conditions.length === 0
+  )
+}
+
+/**
+ * May a day that has just finished loading replace what is on screen?
+ *
+ * The form is interactive before the network reply lands — deliberately, so
+ * the first tap never waits. That opens a window in which a late "nothing is
+ * logged for today" reply can overwrite a tap that already happened: the
+ * practitioner taps "4 new patients", sees it highlight, the reply lands, the
+ * 4 silently reverts to 0, and they submit a zero. It is the worst failure
+ * this form has, because it is invisible and it corrupts the dataset.
+ *
+ * So: an empty reply never wins against work already done. A reply that
+ * carries an actual day does, because that is a real record for this date and
+ * showing the wrong one would be worse.
+ */
+export function shouldReplaceForm(
+  loaded: EntryForm,
+  practitionerHasEdited: boolean,
+): boolean {
+  if (!practitionerHasEdited) return true
+  return !isEmptyEntry(loaded)
+}
+
 function mostCommon<T extends string>(values: T[], fallback: T): T {
   if (values.length === 0) return fallback
   const counts = new Map<T, number>()

@@ -16,7 +16,9 @@ import {
   emptyForm,
   formFromDailyLog,
   formFromRequest,
+  isEmptyEntry,
   newDraftCondition,
+  shouldReplaceForm,
   toDailyLogRequest,
   totalPatients,
   validateForm,
@@ -246,5 +248,47 @@ describe('deriveDefaults', () => {
     expect(next.alsoSeeingGp).toBe('NO')
     expect(next.referredByGp).toBe('NO')
     expect(next.diagnosisBasis).toBe(DEFAULT_DIAGNOSIS_BASIS)
+  })
+})
+
+describe('isEmptyEntry', () => {
+  it('is true only for a day with no counts and no conditions', () => {
+    expect(isEmptyEntry(emptyForm(TODAY))).toBe(true)
+    expect(isEmptyEntry({ ...emptyForm(TODAY), newPatients: 1 })).toBe(false)
+    expect(isEmptyEntry({ ...emptyForm(TODAY), followUpPatients: 1 })).toBe(false)
+    expect(
+      isEmptyEntry({
+        ...emptyForm(TODAY),
+        conditions: [newDraftCondition('MENTAL_HEALTH', 'MH_ANXIETY', CONTRACT_DEFAULTS)],
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('shouldReplaceForm', () => {
+  it('accepts any load while the practitioner has not touched the form', () => {
+    expect(shouldReplaceForm(emptyForm(TODAY), false)).toBe(true)
+    expect(shouldReplaceForm(formWith([]), false)).toBe(true)
+  })
+
+  it('never lets an empty reply wipe out a tap already made', () => {
+    // The form is interactive while the day is still loading, so a late
+    // "nothing is logged for today" reply can land after an early tap. Letting
+    // it win would silently reset a count and submit a zero.
+    expect(shouldReplaceForm(emptyForm(TODAY), true)).toBe(false)
+  })
+
+  it('still shows a real record that arrives after an early tap', () => {
+    // A non-empty reply is the only truth for that date; keeping the taps
+    // instead would be showing the wrong day.
+    expect(shouldReplaceForm(formWith([]), true)).toBe(true)
+  })
+
+  it('counts conditions alone as a real record', () => {
+    const loaded = {
+      ...emptyForm(TODAY),
+      conditions: [newDraftCondition('MENTAL_HEALTH', 'MH_ANXIETY', CONTRACT_DEFAULTS)],
+    }
+    expect(shouldReplaceForm(loaded, true)).toBe(true)
   })
 })
