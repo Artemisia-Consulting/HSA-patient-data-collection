@@ -5,7 +5,7 @@
   "description": "HSA October 2026 live patient-data collection webapp",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "node scripts/build.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
@@ -17,11 +17,15 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:researcher": "tsx prisma/create-researcher.ts",
     "db:demo": "tsx prisma/demo-data.ts",
+    "db:push:prod": "node scripts/with-prod-db.mjs -- npx prisma db push",
+    "db:seed:prod": "node scripts/with-prod-db.mjs -- npx tsx prisma/seed.ts",
+    "db:researcher:prod": "node scripts/with-prod-db.mjs -- npx tsx prisma/create-researcher.ts",
     "postinstall": "prisma generate --no-hints"
   },
   "dependencies": {
     "@date-fns/tz": "1.5.0",
     "@prisma/adapter-better-sqlite3": "7.10.0",
+    "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "7.10.0",
     "@rolldown/binding-win32-x64-msvc": "^1.2.9",
     "better-auth": "1.7.5",

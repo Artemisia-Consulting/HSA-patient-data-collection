@@ -13,10 +13,9 @@
  * Run with:  npm run db:demo
  * Remove with: npm run db:demo -- --clear
  */
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-
 import { PrismaClient } from '../src/generated/prisma/client'
 import { CONDITION_TAXONOMY } from '../src/lib/contract/taxonomy'
+import { createDbAdapter } from '../src/lib/db-adapter'
 
 try {
   process.loadEnvFile()
@@ -29,9 +28,7 @@ if (process.env.NODE_ENV === 'production') {
   process.exit(1)
 }
 
-const prisma = new PrismaClient({
-  adapter: new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? 'file:./dev.db' }),
-})
+const prisma = new PrismaClient({ adapter: createDbAdapter() })
 
 const DEMO_DOMAIN = '@demo.hsa.invalid'
 const DAYS = 24

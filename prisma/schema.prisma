@@ -24,9 +24,13 @@ generator client {
 
 datasource db {
   // SQLite for local dev so every agent can run the app with zero setup.
-  // Production swaps to Postgres: change provider to "postgresql" and point
-  // DATABASE_URL at the managed instance. No SQLite-only features are used.
-  // The connection URL lives in prisma.config.ts (Prisma 7 driver adapters).
+  // Production (Vercel + Supabase) runs on Postgres: scripts/build.mjs flips
+  // this provider to "postgresql" for the deployed build, and
+  // scripts/with-prod-db.mjs does the same for the db:*:prod laptop
+  // commands — both restore "sqlite" afterwards. The flip must precede
+  // `prisma generate`, because the generated client is provider-flavoured.
+  // No SQLite-only features are used. The connection URL lives in
+  // prisma.config.ts (Prisma 7 driver adapters).
   provider = "sqlite"
 }
 

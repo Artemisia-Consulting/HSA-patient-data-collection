@@ -15,9 +15,8 @@
  *   npm run db:researcher -- research@hsa.org.za "HSA Research Team"
  *   npm run db:researcher            # uses RESEARCHER_EMAIL, or the dev default
  */
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-
 import { PrismaClient } from '../src/generated/prisma/client'
+import { createDbAdapter } from '../src/lib/db-adapter'
 
 try {
   process.loadEnvFile()
@@ -25,10 +24,10 @@ try {
   // Real env vars are already present in CI / production.
 }
 
-const adapter = new PrismaBetterSqlite3({
-  url: process.env.DATABASE_URL ?? 'file:./dev.db',
-})
-const prisma = new PrismaClient({ adapter })
+// Local runs create the account on dev.db; `npm run db:researcher:prod`
+// runs this file against the production database through
+// scripts/with-prod-db.mjs.
+const prisma = new PrismaClient({ adapter: createDbAdapter() })
 
 const email = (
   process.argv[2] ??

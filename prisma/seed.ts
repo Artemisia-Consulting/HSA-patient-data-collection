@@ -6,10 +6,9 @@
  *
  * Run with: npm run db:seed
  */
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-
 import { PrismaClient } from '../src/generated/prisma/client'
 import { CONDITION_TAXONOMY, isOtherCondition } from '../src/lib/contract/taxonomy'
+import { createDbAdapter } from '../src/lib/db-adapter'
 
 try {
   process.loadEnvFile()
@@ -17,10 +16,10 @@ try {
   // Real env vars are already present in CI / production.
 }
 
-const adapter = new PrismaBetterSqlite3({
-  url: process.env.DATABASE_URL ?? 'file:./dev.db',
-})
-const prisma = new PrismaClient({ adapter })
+// Local runs seed dev.db; `npm run db:seed:prod` re-runs this file against
+// the production database through scripts/with-prod-db.mjs, which points
+// DATABASE_URL at Supabase and regenerates a postgres-flavoured client.
+const prisma = new PrismaClient({ adapter: createDbAdapter() })
 
 async function main() {
   let created = 0

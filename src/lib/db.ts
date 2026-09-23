@@ -1,14 +1,12 @@
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from '@/generated/prisma'
 
-// Prisma 7 connects through a driver adapter rather than a URL in the schema.
-// Swapping to Postgres for production means swapping this adapter for
-// `PrismaPg` from @prisma/adapter-pg — nothing else in the app changes.
+import { createDbAdapter } from '@/lib/db-adapter'
+
+// Prisma 7 connects through a driver adapter rather than a URL in the schema:
+// SQLite locally, Postgres in production — see db-adapter.ts. Nothing else in
+// the app changes between the two.
 function createClient() {
-  const adapter = new PrismaBetterSqlite3({
-    url: process.env.DATABASE_URL ?? 'file:./dev.db',
-  })
-  return new PrismaClient({ adapter })
+  return new PrismaClient({ adapter: createDbAdapter() })
 }
 
 // Next.js dev mode re-evaluates modules on every hot reload. Without this
