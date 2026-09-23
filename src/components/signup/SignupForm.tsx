@@ -20,6 +20,10 @@
  * registered yet. It fills the fields; it does not tick the box. Consent is
  * the one thing that cannot be inferred from an OAuth callback.
  *
+ * "Continue with Google" is rendered here rather than on the page, so the
+ * form's two modes — signup and already-registered — can never both show a
+ * Google button at once.
+ *
  * OWNER: Stream 2.
  */
 import { useRouter } from 'next/navigation'
@@ -64,6 +68,8 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
   const [consent, setConsent] = useState(false)
 
   const [mode, setMode] = useState<Mode>('signup')
+  /** The server's answer on whether the recovery email actually went out. */
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
@@ -98,6 +104,10 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
       router.replace('/welcome')
     } catch (error) {
       if (error instanceof ApiClientError && error.is('EMAIL_ALREADY_REGISTERED')) {
+        // Keep the server's message: it is the only thing that knows whether
+        // the recovery email was sent or refused, and the panel must say so
+        // rather than reassuring everyone regardless.
+        setRecoveryMessage(error.message || null)
         setMode('duplicate')
         return
       }
@@ -123,6 +133,7 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
       <AlreadyRegistered
         email={email.trim()}
         googleEnabled={googleEnabled}
+        recoveryMessage={recoveryMessage}
         onBack={() => setMode('signup')}
       />
     )
@@ -132,6 +143,21 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-4">
+      {googleEnabled && !prefill ? (
+        <div>
+          <GoogleSignInLink label="Continue with Google" />
+          <p className="mt-2 text-center text-xs text-neutral-500 dark:text-neutral-400">
+            Fills in your name and email, then brings you back here to consent.
+          </p>
+          <div className="mt-5 flex items-center gap-3">
+            <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-700" />
+            <span className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              or fill it in yourself
+            </span>
+            <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-700" />
+          </div>
+        </div>
+      ) : null}
       <Field
         id="fullName"
         label="Your name"
@@ -260,10 +286,13 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
 function AlreadyRegistered({
   email,
   googleEnabled,
+  recoveryMessage,
   onBack,
 }: {
   email: string
   googleEnabled: boolean
+  /** The 409's message — delivered and not-delivered have different wording. */
+  recoveryMessage: string | null
   onBack: () => void
 }) {
   return (
@@ -277,6 +306,11 @@ function AlreadyRegistered({
           nothing more to do — you just need this device to recognise you again.
           Nothing you have logged before has been lost.
         </p>
+        {recoveryMessage ? (
+          <p className="mt-2 text-sm text-neutral-700 dark:text-neutral-200">
+            {recoveryMessage}
+          </p>
+        ) : null}
       </div>
 
       {googleEnabled ? (

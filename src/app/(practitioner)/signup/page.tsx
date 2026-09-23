@@ -10,6 +10,10 @@
  * rather than the query string on purpose: an email address in a URL ends up
  * in browser history and server access logs for no benefit.
  *
+ * The "Continue with Google" control is rendered by SignupForm, not here: the
+ * form owns every Google button so its signup mode and its already-registered
+ * panel can never both show one at the same time.
+ *
  * OWNER: Stream 2.
  */
 import type { Metadata } from 'next'
@@ -17,7 +21,6 @@ import { headers } from 'next/headers'
 import Link from 'next/link'
 
 import { AppShell } from '@/components/shell/AppShell'
-import { GoogleSignInLink } from '@/components/signin/GoogleSignInLink'
 import { SignupForm } from '@/components/signup/SignupForm'
 import { googleIdentity, googleSignInConfigured } from '@/lib/server/googleAuth'
 
@@ -60,22 +63,6 @@ export default async function SignupPage({
             , but it isn’t signed up yet. Your details are filled in below —
             check them, tick the consent box, and you’re in.
           </p>
-        </div>
-      ) : null}
-
-      {googleSignInConfigured && !identity ? (
-        <div className="mb-5">
-          <GoogleSignInLink label="Continue with Google" />
-          <p className="mt-2 text-center text-xs text-neutral-500 dark:text-neutral-400">
-            Fills in your name and email, then brings you back here to consent.
-          </p>
-          <div className="mt-5 flex items-center gap-3">
-            <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-700" />
-            <span className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-              or fill it in yourself
-            </span>
-            <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-700" />
-          </div>
         </div>
       ) : null}
 
