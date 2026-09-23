@@ -11,10 +11,22 @@
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaPg } from '@prisma/adapter-pg'
 
+/**
+ * pg 8.x treats sslmode=require/prefer/verify-ca as aliases for verify-full,
+ * and then rejects Supabase's pooler certificate ("self-signed certificate in
+ * certificate chain") — the opposite of libpq, where require means "encrypt,
+ * don't verify". Every Supabase connection guide tells users to append
+ * ?sslmode=require, so rewrite those modes to no-verify (TLS without
+ * certificate verification) before pg ever sees the URL.
+ */
+function rewriteSslMode(url: string): string {
+  return url.replace(/([?&])sslmode=(require|prefer|verify-ca)\b/gi, '$1sslmode=no-verify')
+}
+
 export function createDbAdapter() {
   const url = process.env.DATABASE_URL ?? 'file:./dev.db'
   if (url.startsWith('file:') || url === ':memory:') {
     return new PrismaBetterSqlite3({ url })
   }
-  return new PrismaPg({ connectionString: url })
+  return new PrismaPg({ connectionString: rewriteSslMode(url) })
 }
