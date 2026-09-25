@@ -90,8 +90,8 @@ export default async function SignInPage({
 
       <p className="mt-6 text-center text-sm text-neutral-600 dark:text-neutral-300">
         Can’t find your link? Email{' '}
-        <a className="underline" href="mailto:data@hsa.org.za">
-          data@hsa.org.za
+        <a className="underline" href="mailto:adrianadraxl@gmail.com">
+          adrianadraxl@gmail.com
         </a>{' '}
         and we’ll resend it.
       </p>

@@ -102,8 +102,8 @@ export default function PrivacyPage() {
           Ticking the box at signup is your consent to take part. There is no
           separate form and no confirmation email. You can withdraw at any time by
           emailing{' '}
-          <a className="underline" href="mailto:data@hsa.org.za">
-            data@hsa.org.za
+          <a className="underline" href="mailto:artemisia@thevitalfactor.com">
+            artemisia@thevitalfactor.com
           </a>
           , and your entries will be removed from the dataset.
         </p>

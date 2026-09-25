@@ -335,8 +335,8 @@ function AlreadyRegistered({
 
       <p className="text-center text-sm text-neutral-600 dark:text-neutral-300">
         Can’t find it? Email{' '}
-        <a className="underline" href="mailto:data@hsa.org.za">
-          data@hsa.org.za
+        <a className="underline" href="mailto:adrianadraxl@gmail.com">
+          adrianadraxl@gmail.com
         </a>{' '}
         and we’ll resend it.
       </p>

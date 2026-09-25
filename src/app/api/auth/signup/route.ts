@@ -89,7 +89,7 @@ export const POST = withRoute(async (request: Request): Promise<NextResponse> =>
       'EMAIL_ALREADY_REGISTERED',
       delivery.delivered
         ? 'That email is already signed up. We have emailed your personal sign-in link to it — open that link to carry on logging.'
-        : 'That email is already signed up. Open the personal link in one of your reminder emails to sign back in, or contact the HSA research team to have it resent.',
+        : 'That email is already signed up. Open the personal link in one of your reminder emails to sign back in, or email adrianadraxl@gmail.com to have it resent.',
       { email: ['This email is already registered'] },
     )
   }
