@@ -42,7 +42,7 @@ export async function PUT(request: Request): Promise<Response> {
     return validationError(parsed.error)
   }
 
-  const { channel, time, includeSaturday, whatsappNumber } = parsed.data
+  const { channel, time, includeSaturday } = parsed.data
   const optingIn = channel !== 'NONE'
   const wasOptedIn = practitioner.reminderChannel !== 'NONE'
 
@@ -59,12 +59,10 @@ export async function PUT(request: Request): Promise<Response> {
       reminderChannel: channel,
       reminderTime: time,
       reminderIncludeSat: includeSaturday,
-      // Keep the number when switching to email so turning WhatsApp back on
-      // does not mean retyping it; drop it when reminders are turned off.
-      whatsappNumber: optingIn
-        ? (whatsappNumber ?? practitioner.whatsappNumber)
-        : null,
       ...(optInAt === undefined ? {} : { reminderOptInAt: optInAt }),
+      // The first deliberate save — whichever way it goes — answers the
+      // one-off setup question for good, so the app stops asking.
+      ...(practitioner.reminderChoiceAt ? {} : { reminderChoiceAt: new Date() }),
     },
     select: {
       id: true,
@@ -74,7 +72,7 @@ export async function PUT(request: Request): Promise<Response> {
       reminderChannel: true,
       reminderTime: true,
       reminderIncludeSat: true,
-      whatsappNumber: true,
+      reminderChoiceAt: true,
     },
   })
 

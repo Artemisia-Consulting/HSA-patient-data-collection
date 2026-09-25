@@ -66,6 +66,7 @@ export async function createPractitioner(
     province: string | null
     role: string
     onboardedAt: Date | null
+    reminderChoiceAt: Date | null
   }> = {},
 ) {
   sequence += 1
@@ -76,6 +77,7 @@ export async function createPractitioner(
       province: overrides.province ?? 'Gauteng',
       role: overrides.role ?? 'PRACTITIONER',
       onboardedAt: overrides.onboardedAt ?? null,
+      reminderChoiceAt: overrides.reminderChoiceAt ?? null,
     },
   })
 }

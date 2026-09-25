@@ -46,7 +46,6 @@ export function makeCandidate(
     channel: 'EMAIL',
     time: '18:00',
     includeSaturday: false,
-    whatsappNumber: null,
     reminderLinkId: 'link-1',
     ...overrides,
   }
@@ -146,7 +145,7 @@ export interface FakeAdapter extends ChannelAdapter {
 }
 
 export function createFakeAdapter(options: {
-  channel: 'EMAIL' | 'WHATSAPP'
+  channel?: 'EMAIL'
   configured?: boolean
   recipient?: (candidate: ReminderCandidate) => string | null
   fail?: string
@@ -154,14 +153,10 @@ export function createFakeAdapter(options: {
   const sent: ReminderMessage[] = []
   return {
     sent,
-    channel: options.channel,
+    channel: options.channel ?? 'EMAIL',
     isConfigured: () => options.configured ?? true,
     recipientFor: (candidate) =>
-      options.recipient
-        ? options.recipient(candidate)
-        : options.channel === 'EMAIL'
-          ? candidate.email || null
-          : candidate.whatsappNumber,
+      options.recipient ? options.recipient(candidate) : candidate.email || null,
     async send(message) {
       if (options.fail) throw new Error(options.fail)
       sent.push(message)

@@ -14,8 +14,8 @@
  */
 import type { ReminderChannel, SkipReason } from '../contract/enums'
 
-/** The two channels a message can actually be delivered over. */
-export type DeliveryChannel = Extract<ReminderChannel, 'EMAIL' | 'WHATSAPP'>
+/** The one channel a message can actually be delivered over. */
+export type DeliveryChannel = 'EMAIL'
 
 /**
  * Injectable clock. Every time-dependent function in this module takes the
@@ -41,12 +41,11 @@ export interface ReminderCandidate {
   /** Practitioner's own email. Delivery input only. Never log this. */
   email: string
   fullName: string
-  /** Declared preference: NONE | EMAIL | WHATSAPP. */
+  /** Declared preference: NONE | EMAIL. */
   channel: ReminderChannel
   /** "HH:mm" in SAST. */
   time: string
   includeSaturday: boolean
-  whatsappNumber: string | null
   reminderLinkId: string
 }
 
@@ -125,7 +124,7 @@ export interface DispatchStore {
 /** What a channel adapter is handed. Identity and a link — nothing clinical. */
 export interface ReminderMessage {
   practitionerId: string
-  /** Email address or E.164 number, depending on the adapter. */
+  /** Email address the message is delivered to. */
   recipient: string
   /** First name, for the greeting. */
   greetingName: string

@@ -32,14 +32,12 @@ interface Draft {
   channel: ReminderChannel
   time: string
   includeSaturday: boolean
-  whatsappNumber: string
 }
 
 const EMPTY_DRAFT: Draft = {
   channel: 'NONE',
   time: DEFAULT_REMINDER_TIME,
   includeSaturday: false,
-  whatsappNumber: '',
 }
 
 function draftFrom(status: ReminderStatusResponse): Draft {
@@ -47,7 +45,6 @@ function draftFrom(status: ReminderStatusResponse): Draft {
     channel: status.preferences.channel,
     time: status.preferences.time,
     includeSaturday: status.preferences.includeSaturday,
-    whatsappNumber: status.preferences.whatsappNumber ?? '',
   }
 }
 
@@ -111,8 +108,6 @@ export function ReminderSettings({ linkKey }: { linkKey: string | null }) {
       channel: draft.channel,
       time: draft.time,
       includeSaturday: draft.includeSaturday,
-      whatsappNumber:
-        draft.channel === 'WHATSAPP' ? draft.whatsappNumber.trim() : null,
     } as ReminderPreferences
 
     void run(
@@ -146,8 +141,7 @@ export function ReminderSettings({ linkKey }: { linkKey: string | null }) {
   const dirty =
     status.preferences.channel !== draft.channel ||
     status.preferences.time !== draft.time ||
-    status.preferences.includeSaturday !== draft.includeSaturday ||
-    (status.preferences.whatsappNumber ?? '') !== draft.whatsappNumber
+    status.preferences.includeSaturday !== draft.includeSaturday
 
   return (
     <div className="space-y-6">
@@ -165,12 +159,7 @@ export function ReminderSettings({ linkKey }: { linkKey: string | null }) {
       <form onSubmit={onSave} className="space-y-6">
         <ChannelPicker
           value={draft.channel}
-          whatsappNumber={draft.whatsappNumber}
-          whatsappError={fieldErrors.whatsappNumber?.[0]}
           onChange={(channel) => setDraft((current) => ({ ...current, channel }))}
-          onWhatsappNumberChange={(whatsappNumber) =>
-            setDraft((current) => ({ ...current, whatsappNumber }))
-          }
           disabled={busy}
         />
 

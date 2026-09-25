@@ -26,17 +26,13 @@ function setup(options: {
   candidates: ReminderCandidate[]
   days?: Map<string, DayState>
   email?: FakeAdapter
-  whatsapp?: FakeAdapter
 }) {
   const email = options.email ?? createFakeAdapter({ channel: 'EMAIL' })
-  const whatsapp =
-    options.whatsapp ?? createFakeAdapter({ channel: 'WHATSAPP', configured: false })
   const store = createFakeStore(options.candidates, options.days)
   return {
     store,
     email,
-    whatsapp,
-    registry: { EMAIL: email, WHATSAPP: whatsapp },
+    registry: { EMAIL: email },
   }
 }
 
@@ -301,55 +297,11 @@ describe('runDispatch — deferral writes nothing', () => {
 })
 
 describe('runDispatch — graceful degradation', () => {
-  it('falls back to email when WhatsApp credentials are absent', async () => {
-    const whatsapp = createFakeAdapter({ channel: 'WHATSAPP', configured: false })
-    const { store, email, registry } = setup({
-      candidates: [makeCandidate({ channel: 'WHATSAPP', whatsappNumber: '+27821234567' })],
-      whatsapp,
-    })
-
-    const summary = await runDispatch({
-      store,
-      registry,
-      appUrl: APP_URL,
-      clock: fixedClock(at('2026-10-05', '18:00')),
-    })
-
-    expect(summary.sent).toBe(1)
-    expect(whatsapp.sent).toHaveLength(0)
-    expect(email.sent).toHaveLength(1)
-    // The audit row names the channel actually used, not the one preferred.
-    expect(store.rows[0]).toMatchObject({ status: 'SENT', channel: 'EMAIL' })
-    expect(summary.events[0]).toMatchObject({ type: 'SENT', fellBack: true })
-  })
-
-  it('uses WhatsApp when it is configured and a number is on file', async () => {
-    const whatsapp = createFakeAdapter({ channel: 'WHATSAPP', configured: true })
-    const { store, email, registry } = setup({
-      candidates: [makeCandidate({ channel: 'WHATSAPP', whatsappNumber: '+27821234567' })],
-      whatsapp,
-    })
-
-    await runDispatch({
-      store,
-      registry,
-      appUrl: APP_URL,
-      clock: fixedClock(at('2026-10-05', '18:00')),
-    })
-
-    expect(whatsapp.sent).toHaveLength(1)
-    expect(whatsapp.sent[0].recipient).toBe('+27821234567')
-    expect(email.sent).toHaveLength(0)
-    expect(store.rows[0]).toMatchObject({ channel: 'WHATSAPP', status: 'SENT' })
-  })
-
-  it('records FAILED with the reason when no channel can carry the message', async () => {
+  it('records FAILED with the reason when email cannot carry the message', async () => {
     const email = createFakeAdapter({ channel: 'EMAIL', configured: false })
-    const whatsapp = createFakeAdapter({ channel: 'WHATSAPP', configured: false })
     const { store, registry } = setup({
-      candidates: [makeCandidate({ channel: 'WHATSAPP', whatsappNumber: '+27821234567' })],
+      candidates: [makeCandidate({ channel: 'EMAIL' })],
       email,
-      whatsapp,
     })
 
     const summary = await runDispatch({
@@ -362,6 +314,25 @@ describe('runDispatch — graceful degradation', () => {
     expect(summary.failed).toBe(1)
     expect(store.rows[0].status).toBe('FAILED')
     expect(store.rows[0].error).toContain('not configured')
+  })
+
+  it('records FAILED when the opted-in practitioner has no address on file', async () => {
+    const email = createFakeAdapter({ channel: 'EMAIL', recipient: () => null })
+    const { store, registry } = setup({
+      candidates: [makeCandidate({ channel: 'EMAIL', email: '' })],
+      email,
+    })
+
+    const summary = await runDispatch({
+      store,
+      registry,
+      appUrl: APP_URL,
+      clock: fixedClock(at('2026-10-05', '18:00')),
+    })
+
+    expect(summary.failed).toBe(1)
+    expect(store.rows[0].status).toBe('FAILED')
+    expect(store.rows[0].error).toContain('no address on file')
   })
 
   it('one practitioner’s failure does not cost the others their reminder', async () => {

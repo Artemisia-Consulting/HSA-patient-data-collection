@@ -58,9 +58,7 @@ function parseAt(value: string | undefined): Date {
 function describe(event: DispatchEvent, dryRun: boolean): string {
   switch (event.type) {
     case 'SENT':
-      return `${dryRun ? 'WOULD SEND' : 'SENT      '} ${event.practitionerId} via ${event.channel} to ${event.recipient}${
-        event.fellBack ? '  (fell back from the declared channel)' : ''
-      }`
+      return `${dryRun ? 'WOULD SEND' : 'SENT      '} ${event.practitionerId} via ${event.channel} to ${event.recipient}`
     case 'SKIPPED':
       return `SKIPPED   ${event.practitionerId} ${event.reason}${
         dryRun || event.recorded ? '' : ' (already recorded)'

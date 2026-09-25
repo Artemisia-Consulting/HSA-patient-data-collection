@@ -56,13 +56,18 @@ model Practitioner {
   role String @default("PRACTITIONER")
 
   // --- Reminder preferences (FR7) ---
-  /// NONE | EMAIL | WHATSAPP
+  /// NONE | EMAIL
   reminderChannel    String    @default("NONE")
   /// "HH:mm" in SAST (Africa/Johannesburg). Default 18:00.
   reminderTime       String    @default("18:00")
   reminderIncludeSat Boolean   @default(false)
-  whatsappNumber     String?
+  /// When they last opted in to email reminders (null while channel is NONE).
   reminderOptInAt    DateTime?
+  /// When the practitioner first answered the reminder question (FR7) — email
+  /// or none. Null means they have not been asked yet, so the app shows the
+  /// one-off choice screen; once set it is never re-asked, whichever way they
+  /// answered. Distinguishes "chose no reminders" from "never asked".
+  reminderChoiceAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -228,7 +233,7 @@ model ReminderDispatch {
 
   /// The SAST "yyyy-MM-dd" this reminder is for.
   logDate String
-  /// EMAIL | WHATSAPP
+  /// EMAIL
   channel String
   /// PENDING | SENT | FAILED | SKIPPED
   status String @default("PENDING")

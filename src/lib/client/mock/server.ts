@@ -213,6 +213,9 @@ async function handleSignup(init?: RequestInit): Promise<Response> {
     reminderLinkId: mockId('lnk'),
     role: 'PRACTITIONER',
     onboardedAt: null,
+    // Fresh signup has not answered the reminder question yet — the mock
+    // serves no /api/reminders routes, but the shape must stay honest.
+    reminderChoiceAt: null,
     consentAt: now,
     createdAt: now,
   }

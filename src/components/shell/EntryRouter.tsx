@@ -6,8 +6,9 @@
  * The rule the brief cares about (user story 2.1, rubric item 2): a returning
  * practitioner must land on the log form having re-entered nothing. So this
  * resolves the session once and forwards — signup if we have never met them,
- * the walkthrough if we have but they have not finished it, otherwise straight
- * to the log.
+ * the walkthrough if we have but they have not finished it, the one-off
+ * reminder question if they have not answered it yet (FR7), otherwise
+ * straight to the log.
  *
  * Offline with a session still goes to the log. The form is usable from cache
  * and the outbox will carry the entry when the signal comes back; bouncing
@@ -36,8 +37,14 @@ export function EntryRouter() {
       if (getSessionToken()) router.replace('/log')
       return
     }
-    router.replace(practitioner?.onboardedAt ? '/log' : '/welcome')
-  }, [practitioner?.onboardedAt, router, status])
+    router.replace(
+      !practitioner?.onboardedAt
+        ? '/welcome'
+        : !practitioner?.reminderChoiceAt
+          ? '/reminders?setup=1'
+          : '/log',
+    )
+  }, [practitioner?.onboardedAt, practitioner?.reminderChoiceAt, router, status])
 
   if (status === 'offline' && !getSessionToken()) {
     return (

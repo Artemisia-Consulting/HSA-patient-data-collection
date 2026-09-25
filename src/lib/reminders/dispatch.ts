@@ -39,7 +39,7 @@ import {
  * ------------------------------------------------------------------ */
 
 export type DispatchEvent =
-  | { type: 'SENT'; practitionerId: string; channel: string; recipient: string; fellBack: boolean }
+  | { type: 'SENT'; practitionerId: string; channel: string; recipient: string }
   | { type: 'SKIPPED'; practitionerId: string; channel: string; reason: SkipReason; recorded: boolean }
   | { type: 'DEFERRED'; practitionerId: string; reason: DeferReason; until: string }
   | { type: 'FAILED'; practitionerId: string; channel: string; error: string }
@@ -219,7 +219,7 @@ async function processCandidate(args: {
       const claim = await store.claim({
         practitionerId: candidate.practitionerId,
         logDate: forDate,
-        channel: candidate.channel === 'WHATSAPP' ? 'WHATSAPP' : 'EMAIL',
+        channel: 'EMAIL',
         scheduledFor: decision.dueAt,
       })
       if (claim) await store.markFailed(claim.id, resolution.error)
@@ -233,7 +233,7 @@ async function processCandidate(args: {
     return
   }
 
-  const { adapter, recipient, fellBack } = resolution.resolved
+  const { adapter, recipient } = resolution.resolved
 
   if (dryRun) {
     summary.sent += 1
@@ -242,7 +242,6 @@ async function processCandidate(args: {
       practitionerId: candidate.practitionerId,
       channel: adapter.channel,
       recipient: maskRecipient(recipient),
-      fellBack,
     })
     return
   }
@@ -281,7 +280,6 @@ async function processCandidate(args: {
       practitionerId: candidate.practitionerId,
       channel: adapter.channel,
       recipient: maskRecipient(recipient),
-      fellBack,
     })
   } catch (error) {
     const message = describeError(error)

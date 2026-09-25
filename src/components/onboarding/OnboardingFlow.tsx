@@ -14,7 +14,9 @@
  * writes a draft. It is a rehearsal, not a sandbox with different rules.
  *
  * Shown once: `/` routes past it as soon as `onboardedAt` is set, and it is
- * skippable from every step for anyone who lands here again.
+ * skippable from every step for anyone who lands here again. Finishing does
+ * not open the log directly — it opens the one-off reminder question
+ * (FR7), which waves through anyone who has already answered it.
  *
  * OWNER: Stream 2.
  */
@@ -83,7 +85,10 @@ export function OnboardingFlow({ firstName, today }: OnboardingFlowProps) {
     } catch {
       // Not worth blocking on: worst case they see this screen once more.
     } finally {
-      router.replace('/log')
+      // Not the log yet: the one-off reminder question (FR7) comes next. It
+      // redirects straight to the log for anyone who has already answered,
+      // so this detour only happens once per practitioner.
+      router.replace('/reminders?setup=1')
     }
   }
 

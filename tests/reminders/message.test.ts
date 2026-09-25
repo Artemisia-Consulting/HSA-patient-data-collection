@@ -15,7 +15,6 @@ import {
   emailText,
   greetingNameFor,
   maskRecipient,
-  whatsappText,
 } from '../../src/lib/reminders/message'
 
 const message = {
@@ -61,7 +60,6 @@ describe('message bodies', () => {
     expect(emailSubject('2026-10-05')).toBe('Your HSA daily log — Mon, 5 Oct 2026')
     expect(emailText(message)).toContain(message.link)
     expect(emailText(message)).toContain('Mon, 5 Oct 2026')
-    expect(whatsappText(message)).toContain(message.link)
   })
 
   it('explains "Done for today" without inviting a fabricated zero', () => {
@@ -80,7 +78,7 @@ describe('message bodies', () => {
       'new patients',
       'follow-up patients',
     ]
-    for (const body of [emailText(message), emailHtml(message), whatsappText(message)]) {
+    for (const body of [emailText(message), emailHtml(message)]) {
       for (const term of forbidden) {
         expect(body.toLowerCase(), term).not.toContain(term.toLowerCase())
       }
@@ -98,9 +96,8 @@ describe('message bodies', () => {
 })
 
 describe('maskRecipient', () => {
-  it('hides the local part of an email and most of a phone number', () => {
+  it('hides the local part of an email', () => {
     expect(maskRecipient('thandi@example.org')).toBe('t*****@example.org')
     expect(maskRecipient('a@example.org')).toBe('a*@example.org')
-    expect(maskRecipient('+27821234567')).toBe('*********567')
   })
 })

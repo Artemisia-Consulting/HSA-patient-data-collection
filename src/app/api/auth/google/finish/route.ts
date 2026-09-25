@@ -59,7 +59,15 @@ export async function GET(request: Request): Promise<NextResponse> {
   if (!practitioner) return to('/signup?google=new')
 
   const { token, expiresAt } = await createSession(practitioner.id)
-  const response = to(practitioner.onboardedAt ? '/log' : '/welcome')
+  // Same gate as the entry router: walkthrough first, then the one-off
+  // reminder question (FR7), then the log.
+  const response = to(
+    !practitioner.onboardedAt
+      ? '/welcome'
+      : !practitioner.reminderChoiceAt
+        ? '/reminders?setup=1'
+        : '/log',
+  )
   setSessionCookie(response, token, expiresAt)
 
   // Best-effort: the app's session is the one that matters from here, and a

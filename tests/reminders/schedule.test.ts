@@ -193,7 +193,7 @@ describe('decideDispatch — precedence', () => {
     // Sunday beats everything: the day was never a sending day.
     expect(
       decideDispatch({
-        candidate: makeCandidate({ channel: 'WHATSAPP' }),
+        candidate: makeCandidate(),
         day: makeDay({ hasLogged: true, markedDoneAt: new Date() }),
         logDate: '2026-10-04',
         now: at('2026-10-04', '18:00'),

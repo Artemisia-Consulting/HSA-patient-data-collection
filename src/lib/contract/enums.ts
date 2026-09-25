@@ -118,15 +118,18 @@ export const DEFAULT_REFERRED_BY_GP: ReferredByGp = 'NOT_APPLICABLE'
 
 /* ------------------------------------------------------------------ *
  * Reminders (FR7)
+ *
+ * Email is the only delivery channel. "NONE" is a deliberate answer
+ * ("do not remind me"), not the absence of one — whether a practitioner
+ * has answered the question at all is tracked by Practitioner.reminderChoiceAt.
  * ------------------------------------------------------------------ */
 
-export const REMINDER_CHANNELS = ['NONE', 'EMAIL', 'WHATSAPP'] as const
+export const REMINDER_CHANNELS = ['NONE', 'EMAIL'] as const
 export type ReminderChannel = (typeof REMINDER_CHANNELS)[number]
 
 export const REMINDER_CHANNEL_LABELS: Record<ReminderChannel, string> = {
   NONE: 'No reminders',
   EMAIL: 'Email',
-  WHATSAPP: 'WhatsApp',
 }
 
 export const DISPATCH_STATUSES = ['PENDING', 'SENT', 'FAILED', 'SKIPPED'] as const

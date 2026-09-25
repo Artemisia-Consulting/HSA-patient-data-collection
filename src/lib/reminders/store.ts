@@ -48,7 +48,6 @@ export function createPrismaDispatchStore(): DispatchStore {
           reminderChannel: true,
           reminderTime: true,
           reminderIncludeSat: true,
-          whatsappNumber: true,
           reminderLinkId: true,
         },
         orderBy: { createdAt: 'asc' },
@@ -61,7 +60,6 @@ export function createPrismaDispatchStore(): DispatchStore {
         channel: toReminderChannel(row.reminderChannel),
         time: row.reminderTime,
         includeSaturday: row.reminderIncludeSat,
-        whatsappNumber: row.whatsappNumber,
         reminderLinkId: row.reminderLinkId,
       }))
     },
@@ -149,5 +147,5 @@ export function createPrismaDispatchStore(): DispatchStore {
 }
 
 function toReminderChannel(value: string): ReminderCandidate['channel'] {
-  return value === 'EMAIL' || value === 'WHATSAPP' ? value : 'NONE'
+  return value === 'EMAIL' ? 'EMAIL' : 'NONE'
 }

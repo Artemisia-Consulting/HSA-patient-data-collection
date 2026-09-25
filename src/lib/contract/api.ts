@@ -109,6 +109,12 @@ export const practitionerSchema = z.object({
   reminderLinkId: z.string(),
   role: roleSchema,
   onboardedAt: z.iso.datetime().nullable(),
+  /**
+   * When the practitioner first answered the reminder question (email or
+   * none). Null means they have not been asked yet — the app shows the
+   * one-off choice screen until it is set, then never again.
+   */
+  reminderChoiceAt: z.iso.datetime().nullable(),
   consentAt: z.iso.datetime(),
   createdAt: z.iso.datetime(),
 })
@@ -328,27 +334,12 @@ export const dailyLogListResponseSchema = z.object({
  * POST /api/reminders/dispatch   → 200   cron-triggered, CRON_SECRET required
  * ================================================================== */
 
-export const reminderPreferencesSchema = z
-  .object({
-    channel: reminderChannelSchema,
-    /** "HH:mm" in SAST. */
-    time: reminderTimeSchema,
-    includeSaturday: z.boolean(),
-    /** E.164, required when channel is WHATSAPP. */
-    whatsappNumber: z
-      .string()
-      .trim()
-      .regex(/^\+[1-9]\d{7,14}$/, 'Use international format, e.g. +27821234567')
-      .nullable()
-      .optional(),
-  })
-  .refine(
-    (prefs) => prefs.channel !== 'WHATSAPP' || Boolean(prefs.whatsappNumber),
-    {
-      message: 'A WhatsApp number is required for WhatsApp reminders',
-      path: ['whatsappNumber'],
-    },
-  )
+export const reminderPreferencesSchema = z.object({
+  channel: reminderChannelSchema,
+  /** "HH:mm" in SAST. */
+  time: reminderTimeSchema,
+  includeSaturday: z.boolean(),
+})
 export type ReminderPreferences = z.infer<typeof reminderPreferencesSchema>
 
 export const snoozeRequestSchema = z.object({

@@ -12,8 +12,8 @@ CREATE TABLE "Practitioner" (
     "reminderChannel" TEXT NOT NULL DEFAULT 'NONE',
     "reminderTime" TEXT NOT NULL DEFAULT '18:00',
     "reminderIncludeSat" BOOLEAN NOT NULL DEFAULT false,
-    "whatsappNumber" TEXT,
     "reminderOptInAt" DATETIME,
+    "reminderChoiceAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 );

@@ -40,7 +40,8 @@ export interface AuthedPractitioner {
   reminderChannel: string
   reminderTime: string
   reminderIncludeSat: boolean
-  whatsappNumber: string | null
+  /** Null until the practitioner has answered the email-or-none question. */
+  reminderChoiceAt: Date | null
 }
 
 const PRACTITIONER_SELECT = {
@@ -51,7 +52,7 @@ const PRACTITIONER_SELECT = {
   reminderChannel: true,
   reminderTime: true,
   reminderIncludeSat: true,
-  whatsappNumber: true,
+  reminderChoiceAt: true,
 } as const
 
 export function hashSessionToken(rawToken: string): string {

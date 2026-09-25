@@ -59,6 +59,7 @@ export function toPractitionerResponse(p: Practitioner): PractitionerResponse {
     reminderLinkId: p.reminderLinkId,
     role: p.role === 'RESEARCHER' ? 'RESEARCHER' : 'PRACTITIONER',
     onboardedAt: isoStringOrNull(p.onboardedAt),
+    reminderChoiceAt: isoStringOrNull(p.reminderChoiceAt),
     consentAt: isoString(p.consentAt),
     createdAt: isoString(p.createdAt),
   }

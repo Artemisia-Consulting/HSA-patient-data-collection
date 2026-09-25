@@ -259,6 +259,6 @@ wrong, and the fix is usually one line.
 
 - The app runs **entirely on your own computer** — nothing you type into it
   goes anywhere else.
-- The reminder emails/WhatsApp messages aren't configured on a home setup, so
-  they won't send — that's expected and doesn't affect anything else
-  (sign-up, daily logging, and the dashboard all work).
+- The reminder emails aren't configured on a home setup, so they won't send —
+  that's expected and doesn't affect anything else (sign-up, daily logging,
+  and the dashboard all work).

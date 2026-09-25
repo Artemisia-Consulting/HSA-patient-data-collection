@@ -20,14 +20,9 @@ export function toCandidate(practitioner: AuthedPractitioner): ReminderCandidate
     practitionerId: practitioner.id,
     email: practitioner.email,
     fullName: practitioner.fullName,
-    channel:
-      practitioner.reminderChannel === 'EMAIL' ||
-      practitioner.reminderChannel === 'WHATSAPP'
-        ? practitioner.reminderChannel
-        : 'NONE',
+    channel: practitioner.reminderChannel === 'EMAIL' ? 'EMAIL' : 'NONE',
     time: practitioner.reminderTime,
     includeSaturday: practitioner.reminderIncludeSat,
-    whatsappNumber: practitioner.whatsappNumber,
     reminderLinkId: practitioner.reminderLinkId,
   }
 }
@@ -71,7 +66,6 @@ export async function buildStatusResponse(
       channel: candidate.channel,
       time: candidate.time,
       includeSaturday: candidate.includeSaturday,
-      whatsappNumber: candidate.whatsappNumber,
     },
     today,
     hasLoggedToday: day.hasLogged,

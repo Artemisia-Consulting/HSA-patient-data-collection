@@ -7,11 +7,11 @@ any point in this stream.
 
 - Scheduler: `scripts/reminders/run-scheduler.ts`
 - Dispatch engine: `src/lib/reminders/dispatch.ts` + `schedule.ts`
-- Channels: `src/lib/reminders/channels/{email,whatsapp,index}.ts`
+- Channels: `src/lib/reminders/channels/{email,index}.ts` (email only — WhatsApp was removed before launch; it was never configured)
 - Message bodies + personalised links: `src/lib/reminders/message.ts`
 - Opt-in UI: `src/app/reminders/page.tsx` + `_components/**`
-- HTTP surface: `src/app/api/reminders/{dispatch,preferences,snooze,done}/route.ts`
-- Tests: `tests/reminders/**` — 4 files, 62 tests
+- HTTP surface: `src/app/api/reminders/{dispatch,preferences,snooze,done-today}/route.ts`
+- Tests: `tests/reminders/**` plus `tests/backend/reminders-preferences.test.ts`
 
 ---
 
@@ -19,16 +19,17 @@ any point in this stream.
 
 | Flow | FR | Notes |
 | --- | --- | --- |
-| Opt-in UI `/reminders?k=...` | FR7 | Server component reads the `?k=` link key from the URL, resolves the practitioner, and hands the form a pre-filled `ReminderPreferences`. Channel picker (Email / WhatsApp / Off), time picker (default `18:00`), Saturday toggle (default off = Mon–Fri only). One save. |
-| Preferences persistence | FR7 | `PUT /api/reminders/preferences` — validates channel + time + Saturday flag + optional WhatsApp MSISDN. Authenticated by `?k=` only (no session cookie required). |
+| Opt-in UI `/reminders?k=...` | FR7 | The page reads the `?k=` link key from the URL and threads it into every API call. Channel picker (Email / Off), time picker (default `18:00`), Saturday toggle (default off = Mon–Fri only). One save. Reached from the app menu and framed in `AppShell`. |
+| One-off compulsory choice | FR7 | `/reminders?setup=1` — shown between the walkthrough and the log until `Practitioner.reminderChoiceAt` is set, never after. "No reminders" counts as an answer; "Decide later" leaves it unset and the question returns on the next fresh entry. The entry router, the walkthrough's finish and the Google sign-in handoff all funnel through this gate. |
+| Preferences persistence | FR7 | `PUT /api/reminders/preferences` — validates channel + time + Saturday flag. Authenticated by session or `?k=`. The first deliberate save stamps `reminderChoiceAt`, whichever way it goes; later saves never move it. |
 | Scheduler | FR7 | `scripts/reminders/run-scheduler.ts` — per-minute `node-cron` tick. Default mode POSTs `/api/reminders/dispatch` with `Authorization: Bearer <CRON_SECRET>`, so the same path a platform cron or external ping service would hit. `--in-process` runs `runDispatch()` directly for a single-process deploy. `--cron="*/5 * * * *"` overrides the cadence. |
 | Dispatch decision | FR7 | For each opted-in practitioner, `decideDispatch()` returns `SEND`, `SKIP` (with a `SKIP_REASONS` code), or `DEFER` (not yet due). Suppression reasons: `ALREADY_LOGGED`, `MARKED_DONE`, `SNOOZED`, `NOT_OPTED_IN`, `NON_WORKING_DAY`. |
 | "Already logged" check | FR7 | `daily-log-gateway.ts` — currently queries `prisma.dailyLog` directly. **Marked TO INTEGRATE**: at merge, swap for the backend's `hasLoggedOn(practitionerId, logDate)` / `practitionerIdsWithLogOn(logDate)` helpers from `src/lib/server/logs.ts` (see §7). |
 | Multi-instance safety | FR7 | Every send is claimed against `@@unique([practitionerId, logDate, channel])` before it goes out, so two schedulers running at once cannot double-send. A second instance loses the race rather than firing twice. |
-| Snooze / "Done for today" | FR7 | `POST /api/reminders/snooze` and `POST /api/reminders/done` — both authenticated by `?k=`. Persist a `DayOverride` row for today, which `decideDispatch()` reads on the next tick. Snooze adds a configurable defer; "done" suppresses for the rest of the day without requiring a log entry. |
+| Snooze / "Done for today" | FR7 | `POST /api/reminders/snooze` and `POST /api/reminders/done-today` — both authenticated by `?k=`. Persist a `DayOverride` row for today, which `decideDispatch()` reads on the next tick. Snooze adds a configurable defer; "done" suppresses for the rest of the day without requiring a log entry. |
 | Personalised link | FR7, user story 2.1 | `buildLogLink(appUrl, reminderLinkId)` → `${APP_URL}/log?k=<reminderLinkId>`. Same `?k=` auth the frontend already accepts on every route, so a practitioner on a fresh device with no session taps the link and lands straight on the form. |
 | Manage link | FR7 | `buildManageLink(appUrl, reminderLinkId)` → `${APP_URL}/reminders?k=<reminderLinkId>`. Same auth, lands on the opt-in / snooze / done panel. |
-| Channels | FR7 | `channels/index.ts` is a registry keyed by channel; `channels/email.ts` uses `nodemailer` with `SMTP_*` env vars; `channels/whatsapp.ts` uses the Meta Cloud API (Graph v21.0) with `WHATSAPP_*` env vars, supporting both template and plain-text modes. Unknown/unsupported channels fall back to email. |
+| Channels | FR7 | `channels/index.ts` is a registry; `channels/email.ts` (nodemailer, `SMTP_*` env vars) is the only adapter. An opted-in practitioner whose email cannot be resolved gets a recorded `FAILED` with the reason — there is no fallback channel to try. |
 | POPIA in message bodies | FR7, POPIA | `message.ts` is compile-time safe: its inputs are `greetingName`, `logDate`, `link`, `manageLink` — nothing about a patient, condition or count can reach a message body because none of it is an input. `maskRecipient()` hides most of an email/phone before it reaches a log line. |
 
 ---
@@ -57,8 +58,7 @@ override row is cleared.
 | --- | --- | --- |
 | `NEXT_PUBLIC_APP_URL` | `message.ts`, `run-scheduler.ts` | Base for personalised links. |
 | `CRON_SECRET` | `/api/reminders/dispatch`, `run-scheduler.ts` | Bearer token for the dispatch endpoint; constant-time compared via backend's `safeCompare` at integration (see §7). |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | `channels/email.ts` | Real delivery; untested in this branch (see §5). |
-| `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAME`, `WHATSAPP_TEMPLATE_LANG` | `channels/whatsapp.ts` | Meta Cloud API. Live send path is untested (see §5). |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | `channels/email.ts` | Real delivery; untested in this branch (see §5). |
 | `DATABASE_URL` | all | SQLite in dev, Postgres in prod. |
 
 ---
@@ -73,9 +73,16 @@ override row is cleared.
 - **`?k=` auth on every reminders route**, not just the log form. The
   practitioner who gets a reminder on a new phone must be able to snooze or
   mark done without first signing up again.
-- **Channel fallback to email.** If a practitioner's chosen channel is
-  unknown or the registry does not have a handler, the dispatch falls back
-  to email rather than silently dropping.
+- **Email is the only channel.** WhatsApp was built but never configured
+  (no `WHATSAPP_*` env vars existed in any deployment), and the app told
+  practitioners it could send WhatsApp — a promise it could not keep. It was
+  removed rather than shipped: one channel that works beats two where one
+  always fails. An opted-in practitioner who cannot be reached by email gets a
+  recorded `FAILED` row with the reason instead of a silent fallback.
+- **`reminderChoiceAt` answers "have we asked?"** `reminderChannel` defaults
+  to `NONE`, so on its own it cannot tell "chose no reminders" from "never
+  asked". A separate nullable timestamp stamps the first deliberate answer and
+  is what the compulsory-choice gate keys on.
 - **`maskRecipient` in log output.** `practitioner.email` is the only
   personal datum in the system and must not appear in scheduler stdout.
 
@@ -95,17 +102,14 @@ override row is cleared.
 - **No live email delivery test.** `channels/email.ts` constructs a
   `nodemailer` transporter and calls `sendMail`, but no test asserts that an
   email actually lands. The SMTP path is wired, not verified.
-- **No live WhatsApp / Meta API test.** `channels/whatsapp.ts` hits the
-  Graph v21.0 endpoint; nothing in the suite exercises a real send. Template
-  rendering and plain-text fallback are unit-tested for shape, not for
-  delivery.
 - **No end-to-end scheduler run against a real clock.** `schedule.ts` is
   tested with injected `now` values; the actual `node-cron` tick in
   `run-scheduler.ts` has never been run in this branch against a live
   database with the clock crossing a due time.
-- **No test of the `/api/reminders/*` HTTP routes.** The dispatch engine,
-  preferences store, snooze and done handlers are unit-tested; the Next.js
-  route handlers that wire them to HTTP are not.
+- **The snooze / done-today / dispatch HTTP routes are untested.** The
+  engine is fully unit-tested and the preferences route has contract-level
+  tests (`tests/backend/reminders-preferences.test.ts`), but the remaining
+  three Next.js route handlers are not exercised.
 - **The `daily-log-gateway.ts` direct-Prisma path is the current
   implementation, but it is the piece most likely to drift at merge** — see
   §7. Its tests use an in-memory SQLite schema that matches the locked
@@ -149,7 +153,7 @@ asks this stream to close:
 From inside this directory (the working invocation on Windows):
 
 ```
-node node_modules/vitest/vitest.mjs run     # 62 reminder tests
+node node_modules/vitest/vitest.mjs run     # reminder engine tests
 npm run typecheck
 ```
 

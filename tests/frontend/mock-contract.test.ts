@@ -63,6 +63,9 @@ describe('POST /api/auth/signup', () => {
     expect(() => authSessionResponseSchema.parse(result)).not.toThrow()
     expect(result.practitioner.email).toBe(SIGNUP.email)
     expect(result.practitioner.onboardedAt).toBeNull()
+    // Not yet asked the reminder question — the entry router keeps sending
+    // them to /reminders?setup=1 until this becomes a timestamp.
+    expect(result.practitioner.reminderChoiceAt).toBeNull()
     expect(result.practitioner.role).toBe('PRACTITIONER')
     // The consent tick IS the consent record (user story 1.6) — so a signup
     // that succeeded must carry a timestamp for it.

@@ -59,7 +59,7 @@ export function emailText(message: ReminderMessage): string {
     message.manageLink,
     '',
     'Homoeopathic Association of South Africa — October 2026 data collection.',
-    'To change the time, switch to WhatsApp or turn reminders off, use the same link.',
+    'To change the time or turn reminders off, use the same link.',
   ].join('\n')
 }
 
@@ -90,23 +90,12 @@ export function emailHtml(message: ReminderMessage): string {
       <hr style="border:none;border-top:1px solid #e3e9e5;margin:24px 0;" />
       <p style="margin:0;font-size:12px;line-height:1.5;color:#6b7a72;">
         Homoeopathic Association of South Africa — October 2026 data collection.<br />
-        Change the time, switch to WhatsApp or turn reminders off from the
+        Change the time or turn reminders off from the
         <a href="${manage}" style="color:#2f6b4f;">same link</a>.
       </p>
     </div>
   </body>
 </html>`
-}
-
-/** The plain-text WhatsApp body, used outside a template send. */
-export function whatsappText(message: ReminderMessage): string {
-  return [
-    `Hi ${message.greetingName}, a quick nudge to log your patient numbers for ${formatLogDateLong(message.logDate)}.`,
-    '',
-    message.link,
-    '',
-    'Saw no patients? Tap "Done for today": ' + message.manageLink,
-  ].join('\n')
 }
 
 /**

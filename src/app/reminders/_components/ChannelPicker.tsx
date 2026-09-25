@@ -1,12 +1,14 @@
 'use client'
 
 /**
- * Channel opt-in (FR7): no reminders / email / WhatsApp.
+ * Channel opt-in (FR7): no reminders / email.
  *
- * A radiogroup rather than a <select>, because on a phone three large tap
- * targets beat a picker wheel and the brief mandates >44px targets. The
- * WhatsApp number field only appears once WhatsApp is chosen, so an
- * email-only practitioner is never asked for a phone number.
+ * A radiogroup rather than a <select>, because on a phone two large tap
+ * targets beat a picker wheel and the brief mandates >44px targets.
+ *
+ * `value` may be null — the first-run choice screen starts with nothing
+ * selected so the practitioner has to make a deliberate pick before the
+ * save button unlocks. The preferences screen always passes a real value.
  *
  * OWNERSHIP: Stream 3 (reminders).
  */
@@ -19,22 +21,15 @@ import {
 const CHANNEL_HINTS: Record<ReminderChannel, string> = {
   NONE: 'You will not be nudged. You can still log any day you like.',
   EMAIL: 'A short email with a one-tap link to your log.',
-  WHATSAPP: 'A WhatsApp message with a one-tap link to your log.',
 }
 
 export function ChannelPicker({
   value,
-  whatsappNumber,
-  whatsappError,
   onChange,
-  onWhatsappNumberChange,
   disabled,
 }: {
-  value: ReminderChannel
-  whatsappNumber: string
-  whatsappError?: string
+  value: ReminderChannel | null
   onChange: (channel: ReminderChannel) => void
-  onWhatsappNumberChange: (value: string) => void
   disabled?: boolean
 }) {
   return (
@@ -66,36 +61,6 @@ export function ChannelPicker({
           )
         })}
       </div>
-
-      {value === 'WHATSAPP' ? (
-        <div className="space-y-1">
-          <label htmlFor="whatsappNumber" className="block text-sm font-medium">
-            WhatsApp number
-          </label>
-          <input
-            id="whatsappNumber"
-            name="whatsappNumber"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            placeholder="+27821234567"
-            value={whatsappNumber}
-            onChange={(event) => onWhatsappNumberChange(event.target.value)}
-            aria-invalid={Boolean(whatsappError)}
-            aria-describedby={whatsappError ? 'whatsappNumber-error' : 'whatsappNumber-hint'}
-            className="min-h-[44px] w-full rounded-lg border border-black/20 px-3 py-2 text-base dark:border-white/25"
-          />
-          {whatsappError ? (
-            <p id="whatsappNumber-error" role="alert" className="text-xs text-red-600">
-              {whatsappError}
-            </p>
-          ) : (
-            <p id="whatsappNumber-hint" className="text-xs opacity-70">
-              International format, starting with +27 for South Africa.
-            </p>
-          )}
-        </div>
-      ) : null}
     </fieldset>
   )
 }

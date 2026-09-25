@@ -99,6 +99,7 @@ describe('GET /api/auth/google/finish — a registered practitioner', () => {
     const practitioner = await createPractitioner({
       email: 'thandi@example.org',
       onboardedAt: new Date(),
+      reminderChoiceAt: new Date(),
     })
     const cookie = await googleSessionCookie({ email: 'thandi@example.org' })
 
@@ -113,6 +114,23 @@ describe('GET /api/auth/google/finish — a registered practitioner', () => {
       where: { tokenHash: hashSessionToken(token!) },
     })
     expect(session?.practitionerId).toBe(practitioner.id)
+  })
+
+  it('sends someone onboarded but not yet asked to the reminder question', async () => {
+    // Same gate as the entry router: the one-off question (FR7) sits between
+    // the walkthrough and the log, Google sign-in included.
+    await createPractitioner({
+      email: 'unasked@example.org',
+      onboardedAt: new Date(),
+      reminderChoiceAt: null,
+    })
+    const cookie = await googleSessionCookie({ email: 'unasked@example.org' })
+
+    const response = await googleFinish(finishRequest(cookie))
+
+    expect(response.headers.get('location')).toBe(
+      'http://localhost:3000/reminders?setup=1',
+    )
   })
 
   it('sends someone who has not onboarded to the walkthrough', async () => {
