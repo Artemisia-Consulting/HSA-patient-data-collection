@@ -72,10 +72,11 @@ export default function PrivacyPage() {
       <Section title="What the researchers see">
         <p>
           Your entries reach the research team attached to an{' '}
-          <strong>anonymous practitioner ID</strong> and, if you gave it, your{' '}
-          <strong>province</strong>. Your email address, your name and your
-          practice name are never included in any dashboard view or CSV export.
-          Your email is used for one thing: sending you your daily logging link.
+          <strong>anonymous practitioner ID</strong> and your{' '}
+          <strong>province</strong> — which is why sign-up asks for it and will
+          not proceed without one. Your email address and your name are never
+          included in any dashboard view or CSV export. Your email is used for
+          one thing: sending you your daily logging link.
         </p>
       </Section>
 

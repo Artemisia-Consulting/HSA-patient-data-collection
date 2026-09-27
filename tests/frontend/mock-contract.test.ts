@@ -46,8 +46,7 @@ const { todayInSast } = await import('../../src/lib/dates')
 const SIGNUP = {
   email: 'thandi@example.co.za',
   fullName: 'Thandi Mokoena',
-  practiceName: 'Rosebank Homoeopathy',
-  province: 'Gauteng',
+  province: 'Gauteng' as const,
   consent: true as const,
 }
 
@@ -85,6 +84,12 @@ describe('POST /api/auth/signup', () => {
   it('rejects an unticked consent box with a field error', async () => {
     await expect(
       api.signup({ ...SIGNUP, email: 'x@example.co.za', consent: false as never }),
+    ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_FAILED' })
+  })
+
+  it('rejects a province outside the nine', async () => {
+    await expect(
+      api.signup({ ...SIGNUP, province: 'Atlantis' as never }),
     ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_FAILED' })
   })
 

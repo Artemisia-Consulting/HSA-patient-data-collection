@@ -63,7 +63,7 @@ export async function createPractitioner(
   overrides: Partial<{
     email: string
     fullName: string
-    province: string | null
+    province: string
     role: string
     onboardedAt: Date | null
     reminderChoiceAt: Date | null

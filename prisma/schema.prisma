@@ -9,9 +9,10 @@
 // Data is recorded per *patient* but never per *person*: a PatientEntry says
 // only that somebody, new or returning, was seen, and a ConditionEntry records
 // what was treated — never who. Nothing links the same individual across two
-// days. Practitioner.email is the only personal datum in the system and must
-// never leave the server in any dashboard/export response — use
-// Practitioner.id as the anonymised key.
+// days. Practitioner.email must never leave the server in any dashboard/export
+// response — use Practitioner.id as the anonymised key. Practitioner.province
+// is required at signup and is the one attribute about a practitioner that
+// deliberately reaches the research dataset, alongside that key.
 //
 // Enum-like columns are plain String because SQLite has no native enum type.
 // The permitted values live in src/lib/contract/enums.ts and are enforced by
@@ -35,13 +36,18 @@ datasource db {
 }
 
 /// A homeopathic practitioner taking part in the October 2026 collection.
-/// `id` is the anonymised identifier used in every dashboard and export.
+/// `id` is the anonymised identifier used in every dashboard and export;
+/// `province` is the one attribute about the practitioner that travels with it.
 model Practitioner {
-  id           String  @id @default(cuid())
-  email        String  @unique
-  fullName     String
-  practiceName String?
-  province     String?
+  id       String @id @default(cuid())
+  email    String @unique
+  fullName String
+
+  /// Required at signup (product-owner decision, September 2026): the research
+  /// team filters on it, so "prefer not to say" is no longer offered. One of
+  /// the nine SA provinces — enums.ts holds the list, provinceSchema enforces
+  /// it, and the DB column is NOT NULL so the dataset cannot lose the region.
+  province String
 
   /// Unguessable id embedded in personalised reminder links. Authenticates a
   /// practitioner arriving on a new device or with cleared storage (FR1).

@@ -21,6 +21,7 @@ import {
   gpCoManagementSchema,
   logDateSchema,
   patientTypeSchema,
+  provinceSchema,
   reminderChannelSchema,
   reminderTimeSchema,
   referredByGpSchema,
@@ -104,8 +105,7 @@ export const practitionerSchema = z.object({
   id: z.string(),
   email: z.email(),
   fullName: z.string(),
-  practiceName: z.string().nullable(),
-  province: z.string().nullable(),
+  province: z.string(),
   reminderLinkId: z.string(),
   role: roleSchema,
   onboardedAt: z.iso.datetime().nullable(),
@@ -127,7 +127,7 @@ export type Practitioner = z.infer<typeof practitionerSchema>
  */
 export const anonymisedPractitionerSchema = z.object({
   id: z.string(),
-  province: z.string().nullable(),
+  province: z.string(),
 })
 export type AnonymisedPractitioner = z.infer<typeof anonymisedPractitionerSchema>
 
@@ -138,8 +138,13 @@ export type AnonymisedPractitioner = z.infer<typeof anonymisedPractitionerSchema
 export const signupRequestSchema = z.object({
   email: z.email('Please enter a valid email address'),
   fullName: z.string().trim().min(2, 'Please enter your name').max(120),
-  practiceName: z.string().trim().max(160).optional(),
-  province: z.string().trim().max(80).optional(),
+  /**
+   * One of the nine provinces, required since September 2026 (product-owner
+   * decision): the research team filters by region, so a participant without
+   * one is no longer a valid signup. The list and its message live in
+   * enums.ts, like every other permitted-value set.
+   */
+  province: provinceSchema,
   /**
    * Must be true. Ticking it *is* the consent record (user story 1.6) — there
    * is no verification step and no cross-check against the survey.
@@ -452,7 +457,7 @@ export type DashboardSummary = z.infer<typeof dashboardSummarySchema>
 export const dashboardEntryRowSchema = z.object({
   logId: z.string(),
   practitionerId: z.string(),
-  province: z.string().nullable(),
+  province: z.string(),
   logDate: logDateSchema,
   newPatients: z.number().int(),
   followUpPatients: z.number().int(),

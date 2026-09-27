@@ -142,7 +142,6 @@ async function main() {
           email,
           fullName: person.name,
           province: person.province,
-          practiceName: `${person.province} Homoeopathy`,
           onboardedAt: new Date(),
         },
         update: { fullName: person.name, province: person.province },

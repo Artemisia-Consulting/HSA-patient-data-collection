@@ -111,7 +111,7 @@ export function EntriesTable({ entries, onPageChange, busy }: EntriesTableProps)
                 className="border-t border-neutral-100 dark:border-neutral-800"
               >
                 <td className={TD}>{fullLogDate(row.logDate)}</td>
-                <td className={TD}>{row.province ?? '—'}</td>
+                <td className={TD}>{row.province}</td>
                 <td className={`${TD} font-mono text-xs`}>{shortId(row.practitionerId)}</td>
                 <td className={`${TD} text-right tabular-nums`}>
                   {row.newPatients + row.followUpPatients}

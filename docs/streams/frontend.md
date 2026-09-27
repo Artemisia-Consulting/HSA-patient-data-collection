@@ -18,7 +18,7 @@ hard-coded per screen.
 
 | Screen / flow | FR | Notes |
 | --- | --- | --- |
-| Signup `/signup` | FR1 | Email + name + optional practice/province + consent checkbox — the tick **is** the consent record. No password, no verification. A 409 duplicate goes to a recovery screen where the practitioner can paste their logging link. |
+| Signup `/signup` | FR1 | Email + name + province (all three required) + consent checkbox — the tick **is** the consent record. No password, no verification. A 409 duplicate goes to a recovery screen where the practitioner can paste their logging link. |
 | Session & routing | FR1 | `EntryRouter` resolves `GET /api/auth/me`: anonymous → signup, not onboarded → welcome, else → log. Token kept in localStorage (bearer) *and* cookie; `?k=` reminder links identify a practitioner on a fresh device with nothing stored. |
 | Onboarding `/welcome` | FR2 | Three cards on what is tracked daily, then a **practice entry** (the real form in practice mode, no API calls) or straight to logging. Skippable, shown once via `onboardedAt`. |
 | Daily entry `/log` | FR3–FR6 | Date auto-filled from the server's SAST `today` (0 taps; today/yesterday/another-day buttons to change). Counts as a 0–9 tap grid plus ±/typed input. Category → condition typeahead (rank-ordered, synonym search, multi-select, per-category "Other (specify)" free text). Per condition: diagnosis basis (defaults to `CLINICAL_DIAGNOSIS`, remembers the practitioner's modal choice via `deriveDefaults`), "Also seeing a GP?" and "Referred by GP?" pre-answered from remembered values. One sticky submit. |

@@ -146,7 +146,7 @@ type ScopedLog = {
   logDate: string
   newPatients: number
   followUpPatients: number
-  practitioner: { id: string; province: string | null }
+  practitioner: { id: string; province: string }
   patients: ScopedPatient[]
 }
 

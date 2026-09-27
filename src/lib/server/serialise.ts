@@ -54,7 +54,6 @@ export function toPractitionerResponse(p: Practitioner): PractitionerResponse {
     id: p.id,
     email: p.email,
     fullName: p.fullName,
-    practiceName: p.practiceName,
     province: p.province,
     reminderLinkId: p.reminderLinkId,
     role: p.role === 'RESEARCHER' ? 'RESEARCHER' : 'PRACTITIONER',

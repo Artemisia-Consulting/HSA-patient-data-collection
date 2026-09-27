@@ -54,6 +54,7 @@ async function signIn() {
   await api.signup({
     email: `p${Math.random().toString(36).slice(2, 8)}@example.co.za`,
     fullName: 'Test Practitioner',
+    province: 'Gauteng',
     consent: true,
   })
 }

@@ -58,7 +58,10 @@ async function main() {
   }
 
   const created = await prisma.practitioner.create({
-    data: { email, fullName, role: 'RESEARCHER' },
+    // A researcher is not a study participant and never logs a day, but the
+    // province column is NOT NULL for every practitioner row — record a
+    // neutral value rather than inventing a participant-shaped one.
+    data: { email, fullName, role: 'RESEARCHER', province: 'Gauteng' },
   })
   console.log(`Created researcher ${email} (${created.id}).`)
   console.log('Sign in at /researcher-signin with the RESEARCHER_CODE for this deployment.')

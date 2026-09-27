@@ -57,8 +57,7 @@ export const POST = withRoute(async (request: Request): Promise<NextResponse> =>
         where: { id: existing.id },
         data: {
           fullName: parsed.data.fullName,
-          practiceName: parsed.data.practiceName ?? existing.practiceName,
-          province: parsed.data.province ?? existing.province,
+          province: parsed.data.province,
         },
       })
       const session = auth.issuedToken
@@ -98,8 +97,7 @@ export const POST = withRoute(async (request: Request): Promise<NextResponse> =>
     data: {
       email,
       fullName: parsed.data.fullName,
-      practiceName: parsed.data.practiceName ?? null,
-      province: parsed.data.province ?? null,
+      province: parsed.data.province,
       // Self-declared consent: the timestamp of the tick is the record.
       consentAt: new Date(),
     },

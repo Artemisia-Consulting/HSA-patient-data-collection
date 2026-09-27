@@ -155,6 +155,28 @@ export const ROLES = ['PRACTITIONER', 'RESEARCHER'] as const
 export type Role = (typeof ROLES)[number]
 
 /* ------------------------------------------------------------------ *
+ * Provinces (FR1)
+ *
+ * Required at signup (product-owner decision, September 2026) — the research
+ * team filters by province, so "prefer not to say" is no longer offered. The
+ * nine names are both the stored values and the display labels.
+ * ------------------------------------------------------------------ */
+
+export const PROVINCES = [
+  'Eastern Cape',
+  'Free State',
+  'Gauteng',
+  'KwaZulu-Natal',
+  'Limpopo',
+  'Mpumalanga',
+  'North West',
+  'Northern Cape',
+  'Western Cape',
+] as const
+
+export type Province = (typeof PROVINCES)[number]
+
+/* ------------------------------------------------------------------ *
  * Zod schemas — the enforcement layer
  * ------------------------------------------------------------------ */
 
@@ -167,6 +189,9 @@ export const reminderChannelSchema = z.enum(REMINDER_CHANNELS)
 export const dispatchStatusSchema = z.enum(DISPATCH_STATUSES)
 export const skipReasonSchema = z.enum(SKIP_REASONS)
 export const roleSchema = z.enum(ROLES)
+export const provinceSchema = z.enum(PROVINCES, {
+  message: 'Please choose your province',
+})
 
 /**
  * A SAST calendar date, "yyyy-MM-dd". Used for DailyLog.logDate,

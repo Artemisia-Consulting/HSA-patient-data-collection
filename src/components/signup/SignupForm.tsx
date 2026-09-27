@@ -3,7 +3,9 @@
 /**
  * Signup (FR1, user story 2.1, rubric item 1).
  *
- * Four fields, two of them optional, and one tick. There is no password, no
+ * Three fields, all required, and one tick. Province became compulsory by
+ * product-owner decision (September 2026) — the research team filters on it —
+ * and the practice-name field was dropped entirely. There is no password, no
  * verification email and no cross-check against the retrospective survey —
  * that was settled by the product owner, and the consent tick *is* the consent
  * record. The copy says so in those words rather than pointing at a policy,
@@ -35,19 +37,7 @@ import { ReminderLinkForm } from '@/components/signin/ReminderLinkForm'
 import { Button } from '@/components/ui/Button'
 import { ApiClientError, ApiNetworkError, api } from '@/lib/client'
 import { signupRequestSchema } from '@/lib/contract/api'
-
-/** The nine provinces, for the optional dropdown. Free text is still allowed. */
-const PROVINCES = [
-  'Eastern Cape',
-  'Free State',
-  'Gauteng',
-  'KwaZulu-Natal',
-  'Limpopo',
-  'Mpumalanga',
-  'North West',
-  'Northern Cape',
-  'Western Cape',
-] as const
+import { PROVINCES } from '@/lib/contract/enums'
 
 type Mode = 'signup' | 'duplicate'
 
@@ -63,7 +53,6 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
 
   const [email, setEmail] = useState(prefill?.email ?? '')
   const [fullName, setFullName] = useState(prefill?.fullName ?? '')
-  const [practiceName, setPracticeName] = useState('')
   const [province, setProvince] = useState('')
   const [consent, setConsent] = useState(false)
 
@@ -82,8 +71,7 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
     const parsed = signupRequestSchema.safeParse({
       email: email.trim(),
       fullName: fullName.trim(),
-      practiceName: practiceName.trim() || undefined,
-      province: province.trim() || undefined,
+      province,
       consent,
     })
 
@@ -179,43 +167,51 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
         hint="Used to send your logging link. Never shown to researchers."
         error={errorFor('email')}
       />
-      <Field
-        id="practiceName"
-        label="Practice name"
-        value={practiceName}
-        onChange={setPracticeName}
-        autoComplete="organization"
-        optional
-        error={errorFor('practiceName')}
-      />
-
       <div>
         <label
           htmlFor="province"
           className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200"
         >
-          Province{' '}
-          <span className="font-normal text-neutral-500 dark:text-neutral-400">
-            (optional)
-          </span>
+          Province
         </label>
         <select
           id="province"
           value={province}
           onChange={(event) => setProvince(event.target.value)}
-          className="min-h-[48px] w-full rounded-xl bg-neutral-50 px-3 text-base text-neutral-900 ring-1 ring-inset ring-neutral-300 focus:ring-2 focus:ring-hsa-600 dark:bg-neutral-800 dark:text-neutral-50 dark:ring-neutral-700"
+          required
+          aria-invalid={Boolean(errorFor('province'))}
+          aria-describedby={errorFor('province') ? 'province-error' : 'province-hint'}
+          className={[
+            'min-h-[48px] w-full rounded-xl bg-neutral-50 px-3 text-base text-neutral-900 ring-1 ring-inset focus:ring-2 dark:bg-neutral-800 dark:text-neutral-50',
+            errorFor('province')
+              ? 'ring-red-500 focus:ring-red-500'
+              : 'ring-neutral-300 focus:ring-hsa-600 dark:ring-neutral-700',
+          ].join(' ')}
         >
-          <option value="">Prefer not to say</option>
+          <option value="">Choose your province</option>
           {PROVINCES.map((name) => (
             <option key={name} value={name}>
               {name}
             </option>
           ))}
         </select>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-          Province is the only thing about you that reaches the dataset, and only
-          alongside an anonymous ID.
-        </p>
+        {errorFor('province') ? (
+          <p
+            id="province-error"
+            role="alert"
+            className="mt-1 text-sm font-medium text-red-600 dark:text-red-400"
+          >
+            {errorFor('province')}
+          </p>
+        ) : (
+          <p
+            id="province-hint"
+            className="mt-1 text-xs text-neutral-500 dark:text-neutral-400"
+          >
+            Province is the only thing about you that reaches the dataset, and
+            only alongside an anonymous ID.
+          </p>
+        )}
       </div>
 
       <div
@@ -247,7 +243,7 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
             patient names, ID numbers, ages, sexes, file numbers or clinical
             notes, and nothing that links a patient from one day to the next. My
             own email is used only to send me my logging link; researchers see an
-            anonymous ID and my province, never my email or my practice. Ticking
+            anonymous ID and my province, never my email. Ticking
             this box <strong>is</strong> my consent — there
             is no confirmation email to click and no password to remember. I can
             ask the HSA to remove my data at any time.
@@ -359,7 +355,6 @@ function Field({
   inputMode,
   autoComplete,
   required = false,
-  optional = false,
   hint,
   error,
 }: {
@@ -371,7 +366,6 @@ function Field({
   inputMode?: 'text' | 'email'
   autoComplete?: string
   required?: boolean
-  optional?: boolean
   hint?: string
   error?: string
 }) {
@@ -382,12 +376,6 @@ function Field({
         className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200"
       >
         {label}
-        {optional ? (
-          <span className="font-normal text-neutral-500 dark:text-neutral-400">
-            {' '}
-            (optional)
-          </span>
-        ) : null}
       </label>
       <input
         id={id}

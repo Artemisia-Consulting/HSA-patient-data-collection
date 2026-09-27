@@ -93,11 +93,12 @@ is no patient table, no name column, no free-text clinical note — the only
 free text is the per-category "Other (specify)" field, capped at 120
 characters.
 
-`Practitioner.email` is the single piece of personal data in the system. It
-must never appear in a dashboard or export response; `Practitioner.id` is the
-anonymised key. The contract enforces this structurally:
-`anonymisedPractitionerSchema` has no email field, so adding one would mean
-changing the contract.
+`Practitioner.email` (and `fullName`) must never appear in a dashboard or
+export response; `Practitioner.id` is the anonymised key, and `province` —
+required at signup since September 2026 — is the only practitioner attribute
+that deliberately reaches the dataset alongside it. The contract enforces this
+structurally: `anonymisedPractitionerSchema` has no email field, so adding one
+would mean changing the contract.
 
 Consent is self-declared at signup — ticking the box *is* the consent record.
 There is no cross-check against the retrospective survey, by decision of the

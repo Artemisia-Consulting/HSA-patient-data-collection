@@ -20,7 +20,6 @@ import { POST as onboarded } from '@/app/api/auth/onboarded/route'
 const validSignup = {
   email: 'thandi@example.org',
   fullName: 'Thandi Mokoena',
-  practiceName: 'Rosebank Homoeopathy',
   province: 'Gauteng',
   consent: true as const,
 }
@@ -55,6 +54,26 @@ describe('POST /api/auth/signup — input validation (FR1)', () => {
     expect(response.status).toBe(400)
     const body = apiErrorSchema.parse(await readJson(response))
     expect(body.error.fieldErrors?.consent).toBeDefined()
+  })
+
+  it('rejects a signup without a province', async () => {
+    const response = await signup(
+      apiRequest('/api/auth/signup', { body: { ...validSignup, province: undefined } }),
+      undefined,
+    )
+    expect(response.status).toBe(400)
+    const body = apiErrorSchema.parse(await readJson(response))
+    expect(body.error.fieldErrors?.province).toBeDefined()
+  })
+
+  it('rejects a province outside the nine', async () => {
+    const response = await signup(
+      apiRequest('/api/auth/signup', { body: { ...validSignup, province: 'Atlantis' } }),
+      undefined,
+    )
+    expect(response.status).toBe(400)
+    const body = apiErrorSchema.parse(await readJson(response))
+    expect(body.error.fieldErrors?.province).toBeDefined()
   })
 
   it('rejects a one-character name', async () => {
@@ -188,7 +207,7 @@ describe('POST /api/auth/signup — duplicate email (rubric item 1, tier 3)', ()
     const response = await signup(
       apiRequest(
         `/api/auth/signup?k=${created.practitioner.reminderLinkId}`,
-        { body: { ...validSignup, practiceName: 'Sandton Homoeopathy' } },
+        { body: { ...validSignup, province: 'Western Cape' } },
       ),
       undefined,
     )
@@ -196,7 +215,7 @@ describe('POST /api/auth/signup — duplicate email (rubric item 1, tier 3)', ()
 
     const body = authSessionResponseSchema.parse(await readJson(response))
     expect(body.practitioner.id).toBe(created.practitioner.id)
-    expect(body.practitioner.practiceName).toBe('Sandton Homoeopathy')
+    expect(body.practitioner.province).toBe('Western Cape')
     expect(await prisma.practitioner.count()).toBe(1)
   })
 })
