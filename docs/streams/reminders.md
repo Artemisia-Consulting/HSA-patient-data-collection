@@ -58,6 +58,7 @@ override row is cleared.
 | --- | --- | --- |
 | `NEXT_PUBLIC_APP_URL` | `message.ts`, `run-scheduler.ts` | Base for personalised links. |
 | `CRON_SECRET` | `/api/reminders/dispatch`, `run-scheduler.ts` | Bearer token for the dispatch endpoint; constant-time compared via backend's `safeCompare` at integration (see §7). |
+| `REMINDERS_IGNORE_WINDOW` | `schedule.ts` (`isDispatchableDate`, `nextReminderAt`) | Set to `1` to rehearse before 1 October: opens the *front* of the collection window so real reminders can be sent during pre-launch testing. The end date (31 Oct) is never lifted, so a flag left set after the study cannot nudge anyone in November. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | `channels/email.ts` | Real delivery; untested in this branch (see §5). |
 | `DATABASE_URL` | all | SQLite in dev, Postgres in prod. |
 
@@ -85,6 +86,12 @@ override row is cleared.
   is what the compulsory-choice gate keys on.
 - **`maskRecipient` in log output.** `practitioner.email` is the only
   personal datum in the system and must not appear in scheduler stdout.
+- **The window guard has a front-door escape hatch, with a floor and a
+  ceiling.** `REMINDERS_IGNORE_WINDOW=1` (or `--force`, or an explicit
+  `ignoreWindow` argument) lets dispatch runs fire before 1 October — what
+  pre-launch testing on real practitioners needs. It deliberately cannot
+  lift the *end* of the window: whatever is left behind in a hosting
+  dashboard, the system stops nudging people after 31 October.
 
 ---
 
@@ -162,6 +169,18 @@ To run the scheduler once, dry-run style:
 ```
 npx tsx scripts/reminders/dispatch-once.ts   # one tick, prints what would fire
 ```
+
+To rehearse a pre-launch test day (before 1 October), open the front of the
+window first — `--force` is the same switch as the env var:
+
+```
+$env:REMINDERS_IGNORE_WINDOW="1"   # PowerShell; bash: export REMINDERS_IGNORE_WINDOW=1
+npx tsx scripts/reminders/dispatch-once.ts --dry-run --at=2026-09-28T18:01
+npx tsx scripts/reminders/dispatch-once.ts --force --at=2026-09-28T18:01
+```
+
+The same flag in the deployed environment is what lets real reminders go out
+before 1 October — see §3.
 
 To run the scheduler as a long-running process:
 

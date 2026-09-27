@@ -72,7 +72,7 @@ export interface DispatchRunOptions {
   appUrl?: string
   /** Override the SAST date. Defaults to today in SAST at the injected instant. */
   logDate?: string
-  /** Lift the October-2026 guard, for demos and load tests. */
+  /** Open the front of the October window (never the end), for pre-launch rehearsals. */
   ignoreWindow?: boolean
   /** Decide everything, write nothing, send nothing. */
   dryRun?: boolean
@@ -113,7 +113,8 @@ export async function runDispatch(
 
   if (!isDispatchableDate(forDate, options.ignoreWindow)) {
     // Outside the collection window the run is a deliberate no-op: no sends,
-    // no rows. Practitioners must not be nudged in September or November.
+    // no rows. The rehearsal flag (see isDispatchableDate) opens only the
+    // front of the window — the end date always holds.
     summary.outsideCollectionWindow = true
     return summary
   }

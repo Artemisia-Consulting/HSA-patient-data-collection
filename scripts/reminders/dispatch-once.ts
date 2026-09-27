@@ -15,7 +15,9 @@
  *                  time; anything else is handed to `new Date()`. Default now.
  *   --date=<d>     Force the SAST logDate, independently of --at. Rarely needed.
  *   --dry-run      Decide everything, write nothing, send nothing. Safe anywhere.
- *   --force        Ignore the October-2026 collection window.
+ *   --force        Open the front of the October-2026 collection window so
+ *                  pre-October rehearsal days can fire; the end date (31 Oct)
+ *                  always holds. Same switch as REMINDERS_IGNORE_WINDOW=1.
  *   --via-http     POST /api/reminders/dispatch with CRON_SECRET instead of
  *                  running in-process. Needs the app running; this is the
  *                  exact path production cron takes.
@@ -106,7 +108,8 @@ async function main(): Promise<void> {
   )
   if (summary.outsideCollectionWindow) {
     console.log(
-      'Outside the October 2026 collection window — no reminders sent. Use --force to override.',
+      'Outside the October 2026 collection window — no reminders sent. ' +
+        '--force opens the front of the window, never the end.',
     )
     return
   }

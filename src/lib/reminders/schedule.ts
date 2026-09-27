@@ -128,10 +128,16 @@ export function decideDispatch(args: {
  * Scanning starts at today, or at the first day of the collection window when
  * today falls before it — so during September the preferences screen honestly
  * answers "Thu, 1 Oct 2026 at 18:00" rather than promising a reminder that
- * the dispatcher would refuse to send. After the window closes it returns
- * null. `horizonDays` only ever has to cover a Sunday plus an opted-out
- * Saturday, but scans further so a future window change cannot silently
- * return null.
+ * the dispatcher would refuse to send. That September answer only holds while
+ * the dispatcher agrees: with `REMINDERS_IGNORE_WINDOW=1` (the pre-launch
+ * rehearsal flag, the same one `isDispatchableDate` reads) reminders really do
+ * fire before October, so scanning starts at today and the screen says
+ * "tonight" rather than contradicting the email that arrives.
+ *
+ * After the window closes it returns null either way — the end date has no
+ * escape hatch, matching `isDispatchableDate`. `horizonDays` only ever has to
+ * cover a Sunday plus an opted-out Saturday, but scans further so a future
+ * window change cannot silently return null.
  */
 export function nextReminderAt(args: {
   candidate: ReminderCandidate
@@ -139,12 +145,17 @@ export function nextReminderAt(args: {
   day?: DayState
   now: Date
   horizonDays?: number
+  /** Rehearsal escape hatch. Defaults to `REMINDERS_IGNORE_WINDOW === '1'`. */
+  ignoreWindow?: boolean
 }): Date | null {
   const { candidate, day, now, horizonDays = 45 } = args
   if (candidate.channel === 'NONE') return null
 
+  const rehearsal =
+    args.ignoreWindow ?? process.env.REMINDERS_IGNORE_WINDOW === '1'
   const today = todayInSast(now)
-  let cursor = today < COLLECTION_START_DATE ? COLLECTION_START_DATE : today
+  let cursor =
+    rehearsal || today >= COLLECTION_START_DATE ? today : COLLECTION_START_DATE
 
   for (let step = 0; step <= horizonDays; step += 1) {
     if (cursor > COLLECTION_END_DATE) return null
@@ -183,12 +194,17 @@ export function nextReminderAt(args: {
 /**
  * Whether a dispatch run for this SAST date is allowed to send at all.
  * Reminders are for the October 2026 collection; outside it the run is a
- * no-op. `REMINDERS_IGNORE_WINDOW=1` lifts the guard so the system can be
- * demonstrated and load-tested before 1 October.
+ * no-op.
+ *
+ * `REMINDERS_IGNORE_WINDOW=1` opens the *front* of the window so real
+ * reminders can be sent during pre-launch testing, before 1 October. The end
+ * date is never lifted: a flag left set after the study cannot nudge anyone
+ * in November.
  */
 export function isDispatchableDate(
   logDate: string,
   ignoreWindow = process.env.REMINDERS_IGNORE_WINDOW === '1',
 ): boolean {
-  return ignoreWindow || isWithinCollectionWindow(logDate)
+  if (!ignoreWindow) return isWithinCollectionWindow(logDate)
+  return logDate <= COLLECTION_END_DATE
 }

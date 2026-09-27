@@ -2,10 +2,12 @@
  * The scheduling and suppression rules (FR7, rubric item 8 tier 3).
  *
  * Dates used throughout — October 2026, SAST:
- *   Thu 1 Oct, Fri 2 Oct, Sat 3 Oct, Sun 4 Oct, Mon 5 Oct.
+ *   Thu 1 Oct, Fri 2 Oct, Sat 3 Oct, Sun 4 Oct, Mon 5 Oct,
+ *   plus the pre-launch rehearsal days Sun 27 / Mon 28 September.
  *
  * Every assertion pins an instant explicitly. Nothing here depends on when
- * the suite happens to run, so the Sunday case is tested on a Tuesday.
+ * the suite happens to run, so the Sunday case is tested on a Tuesday; the
+ * rehearsal tests pass `ignoreWindow` explicitly for the same reason.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -14,6 +16,7 @@ import {
   decideDispatch,
   dueAtFor,
   endOfSastDay,
+  isDispatchableDate,
   nextReminderAt,
 } from '../../src/lib/reminders/schedule'
 import { makeCandidate, makeDay } from './fakes'
@@ -268,13 +271,48 @@ describe('nextReminderAt', () => {
   })
 
   it('points at the first day of the collection window before it opens', () => {
-    // Today is September: the honest answer is "1 October", not "tonight".
+    // Today is September and the dispatcher's window guard is on (the flag is
+    // passed explicitly so the test cannot depend on the ambient env): the
+    // honest answer is "1 October", not "tonight".
     expect(
       nextReminderAt({
         candidate: makeCandidate(),
         now: at('2026-09-20', '12:00'),
+        ignoreWindow: false,
       })?.toISOString(),
     ).toBe(at('2026-10-01', '18:00').toISOString())
+  })
+
+  it('answers "tonight" in September while the rehearsal flag is on', () => {
+    // Pre-launch testing: the dispatcher really will fire on Mon 28 Sept, so
+    // the screen must not promise 1 October while an email arrives tonight.
+    expect(
+      nextReminderAt({
+        candidate: makeCandidate(),
+        ignoreWindow: true,
+        now: at('2026-09-28', '12:00'),
+      })?.toISOString(),
+    ).toBe(at('2026-09-28', '18:00').toISOString())
+  })
+
+  it('skips a rehearsal-mode Sunday, and still returns null after the window', () => {
+    // Sun 27 Sept with the flag on — the next working day is the answer.
+    expect(
+      nextReminderAt({
+        candidate: makeCandidate(),
+        ignoreWindow: true,
+        now: at('2026-09-27', '12:00'),
+      })?.toISOString(),
+    ).toBe(at('2026-09-28', '18:00').toISOString())
+
+    // November is untouched by the flag: the end date has no escape hatch.
+    expect(
+      nextReminderAt({
+        candidate: makeCandidate(),
+        ignoreWindow: true,
+        now: at('2026-11-02', '09:00'),
+      }),
+    ).toBeNull()
   })
 
   it('returns null after the window closes, and for opted-out practitioners', () => {
@@ -288,5 +326,21 @@ describe('nextReminderAt', () => {
         now: at('2026-10-05', '09:00'),
       }),
     ).toBeNull()
+  })
+})
+
+describe('isDispatchableDate — the October window guard', () => {
+  it('blocks dates outside October 2026 by default', () => {
+    expect(isDispatchableDate('2026-09-30', false)).toBe(false)
+    expect(isDispatchableDate('2026-10-01', false)).toBe(true)
+    expect(isDispatchableDate('2026-10-31', false)).toBe(true)
+    expect(isDispatchableDate('2026-11-01', false)).toBe(false)
+  })
+
+  it('opens the front of the window for rehearsals, never the end', () => {
+    // Pre-launch testing: September test days must be able to fire...
+    expect(isDispatchableDate('2026-09-30', true)).toBe(true)
+    // ...but a forgotten flag must not carry the system into November.
+    expect(isDispatchableDate('2026-11-01', true)).toBe(false)
   })
 })

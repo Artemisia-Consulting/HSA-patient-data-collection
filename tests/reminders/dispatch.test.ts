@@ -379,6 +379,8 @@ describe('runDispatch — guards', () => {
       store,
       registry,
       appUrl: APP_URL,
+      // Passed explicitly so the suite cannot depend on the ambient env.
+      ignoreWindow: false,
       clock: fixedClock(at('2026-09-30', '18:00')),
     })
 
@@ -388,7 +390,7 @@ describe('runDispatch — guards', () => {
     expect(email.sent).toHaveLength(0)
   })
 
-  it('sends outside the window when explicitly forced', async () => {
+  it('sends on a pre-October rehearsal day once the guard is lifted', async () => {
     const { store, email, registry } = setup({ candidates: [makeCandidate()] })
 
     const summary = await runDispatch({
@@ -402,6 +404,23 @@ describe('runDispatch — guards', () => {
     expect(summary.sent).toBe(1)
     expect(email.sent).toHaveLength(1)
     expect(store.rows).toHaveLength(1)
+  })
+
+  it('still sends nothing after the window closes, even when forced', async () => {
+    const { store, email, registry } = setup({ candidates: [makeCandidate()] })
+
+    const summary = await runDispatch({
+      store,
+      registry,
+      appUrl: APP_URL,
+      ignoreWindow: true,
+      clock: fixedClock(at('2026-11-02', '18:00')),
+    })
+
+    expect(summary.outsideCollectionWindow).toBe(true)
+    expect(summary).toMatchObject({ considered: 0, sent: 0, skipped: 0, failed: 0 })
+    expect(store.rows).toHaveLength(0)
+    expect(email.sent).toHaveLength(0)
   })
 
   it('dry run decides everything and writes nothing', async () => {
