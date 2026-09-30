@@ -2,8 +2,7 @@
   "crons": [
     {
       "path": "/api/reminders/dispatch",
-      "schedule": "*/15 15-21 * * *",
-      "secret": "CRON_SECRET"
+      "schedule": "*/15 15-21 * * *"
     }
   ]
 }
