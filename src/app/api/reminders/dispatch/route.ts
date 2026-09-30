@@ -2,15 +2,16 @@
  * POST /api/reminders/dispatch → 200 dispatchResultSchema | 401 | 500
  *
  * The cron entry point. Whatever drives the schedule — the bundled node-cron
- * runner in scripts/reminders/, a platform cron, or an external ping service —
- * calls this one URL, so there is exactly one code path into delivery and one
- * place the audit trail is written.
+ * runner in scripts/reminders/, Vercel Cron (vercel.json), a platform cron,
+ * or an external ping service — calls this one URL, so there is exactly one
+ * code path into delivery and one place the audit trail is written.
  *
  * AUTH: the CRON_SECRET from the environment, as
- * `Authorization: Bearer <secret>` or `x-cron-secret: <secret>`. If the
- * variable is unset the route refuses every request rather than defaulting to
- * open — an unauthenticated dispatch endpoint would let anyone on the
- * internet mail every practitioner in the study, repeatedly.
+ * `Authorization: Bearer <secret>`, `x-cron-secret: <secret>`, or
+ * `x-vercel-cron-secret: <secret>` (Vercel Cron). If the variable is unset
+ * the route refuses every request rather than defaulting to open — an
+ * unauthenticated dispatch endpoint would let anyone on the internet mail
+ * every practitioner in the study, repeatedly.
  *
  * Idempotent by construction: calling it twice in the same minute cannot
  * double-send, because each send is claimed against
@@ -36,7 +37,10 @@ function presentedSecret(request: Request): string | null {
     if (match) return match[1].trim()
   }
   const direct = request.headers.get('x-cron-secret')
-  return direct ? direct.trim() : null
+  if (direct) return direct.trim()
+  // Vercel Cron sends the configured secret in this header automatically.
+  const vercel = request.headers.get('x-vercel-cron-secret')
+  return vercel ? vercel.trim() : null
 }
 
 export async function POST(request: Request): Promise<Response> {
