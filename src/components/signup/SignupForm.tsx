@@ -26,6 +26,14 @@
  * form's two modes — signup and already-registered — can never both show a
  * Google button at once.
  *
+ * PRACTITIONER PASSCODE (October 2026). A new email is not enough to become a
+ * practitioner any more: the server answers PRACTITIONER_CODE_REQUIRED, and
+ * the form moves to a third mode that asks for the passcode the HSA gives to
+ * participating practitioners. The details are sent first, without it, on
+ * purpose — an email that is already registered must go straight to the
+ * already-registered panel and never be asked for a passcode. Someone without
+ * one is pointed at guest mode rather than left at a dead end.
+ *
  * OWNER: Stream 2.
  */
 import { useRouter } from 'next/navigation'
@@ -36,10 +44,10 @@ import { GoogleSignInLink } from '@/components/signin/GoogleSignInLink'
 import { ReminderLinkForm } from '@/components/signin/ReminderLinkForm'
 import { Button } from '@/components/ui/Button'
 import { ApiClientError, ApiNetworkError, api } from '@/lib/client'
-import { signupRequestSchema } from '@/lib/contract/api'
+import { signupRequestSchema, type SignupRequest } from '@/lib/contract/api'
 import { PROVINCES } from '@/lib/contract/enums'
 
-type Mode = 'signup' | 'duplicate'
+type Mode = 'signup' | 'passcode' | 'duplicate'
 
 export interface SignupFormProps {
   /** Name and email already verified by Google, when the flow came that way. */
@@ -56,6 +64,9 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
   const [province, setProvince] = useState('')
   const [consent, setConsent] = useState(false)
 
+  const [practitionerCode, setPractitionerCode] = useState('')
+  const [codeError, setCodeError] = useState<string | null>(null)
+
   const [mode, setMode] = useState<Mode>('signup')
   /** The server's answer on whether the recovery email actually went out. */
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
@@ -63,32 +74,31 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
   const [formError, setFormError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    setFormError(null)
-    setFieldErrors({})
-
+  /** The details as the contract has them, or null with the fields marked. */
+  function parseDetails(): SignupRequest | null {
     const parsed = signupRequestSchema.safeParse({
       email: email.trim(),
       fullName: fullName.trim(),
       province,
       consent,
     })
+    if (parsed.success) return parsed.data
 
-    if (!parsed.success) {
-      const errors: Record<string, string[]> = {}
-      for (const issue of parsed.error.issues) {
-        const key = issue.path.map(String).join('.') || 'form'
-        ;(errors[key] ??= []).push(issue.message)
-      }
-      setFieldErrors(errors)
-      setFormError('Please check the highlighted fields.')
-      return
+    const errors: Record<string, string[]> = {}
+    for (const issue of parsed.error.issues) {
+      const key = issue.path.map(String).join('.') || 'form'
+      ;(errors[key] ??= []).push(issue.message)
     }
+    setFieldErrors(errors)
+    setFormError('Please check the highlighted fields.')
+    setMode('signup')
+    return null
+  }
 
+  async function send(details: SignupRequest, code: string | undefined) {
     setBusy(true)
     try {
-      await api.signup(parsed.data)
+      await api.signup(code ? { ...details, practitionerCode: code } : details)
       router.replace('/welcome')
     } catch (error) {
       if (error instanceof ApiClientError && error.is('EMAIL_ALREADY_REGISTERED')) {
@@ -97,6 +107,16 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
         // rather than reassuring everyone regardless.
         setRecoveryMessage(error.message || null)
         setMode('duplicate')
+        return
+      }
+      if (
+        error instanceof ApiClientError &&
+        (error.is('PRACTITIONER_CODE_REQUIRED') || error.is('PRACTITIONER_CODE_INVALID'))
+      ) {
+        // A new practitioner: one more step. "Required" is the normal first
+        // answer and is not an error to show; "invalid" is.
+        setCodeError(error.is('PRACTITIONER_CODE_INVALID') ? error.message : null)
+        setMode('passcode')
         return
       }
       if (error instanceof ApiClientError) {
@@ -114,6 +134,52 @@ export function SignupForm({ prefill, googleEnabled = false }: SignupFormProps) 
     } finally {
       setBusy(false)
     }
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setFormError(null)
+    setFieldErrors({})
+
+    const details = parseDetails()
+    if (!details) return
+    // A passcode typed earlier (then "Back to your details") rides along, so
+    // correcting a typo in the name does not mean typing the passcode again.
+    await send(details, practitionerCode.trim() || undefined)
+  }
+
+  async function handlePasscodeSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setFormError(null)
+    setCodeError(null)
+
+    const code = practitionerCode.trim()
+    if (!code) {
+      setCodeError('Enter the practitioner passcode')
+      return
+    }
+    const details = parseDetails()
+    if (!details) return
+    await send(details, code)
+  }
+
+  if (mode === 'passcode') {
+    return (
+      <PasscodeStep
+        email={email.trim()}
+        code={practitionerCode}
+        onCodeChange={setPractitionerCode}
+        codeError={codeError}
+        formError={formError}
+        busy={busy}
+        onSubmit={handlePasscodeSubmit}
+        onBack={() => {
+          setFormError(null)
+          setCodeError(null)
+          setMode('signup')
+        }}
+      />
+    )
   }
 
   if (mode === 'duplicate') {
@@ -344,6 +410,96 @@ function AlreadyRegistered({
   )
 }
 
+/* ------------------------------------------------------------------ *
+ * The passcode step — only ever reached for an email that is not yet
+ * registered (the server checks for a duplicate first).
+ * ------------------------------------------------------------------ */
+
+function PasscodeStep({
+  email,
+  code,
+  onCodeChange,
+  codeError,
+  formError,
+  busy,
+  onSubmit,
+  onBack,
+}: {
+  email: string
+  code: string
+  onCodeChange: (value: string) => void
+  codeError: string | null
+  formError: string | null
+  busy: boolean
+  onSubmit: (event: React.FormEvent) => void
+  onBack: () => void
+}) {
+  return (
+    <form onSubmit={onSubmit} noValidate className="space-y-4">
+      <div className="rounded-2xl bg-hsa-50 p-4 ring-1 ring-hsa-600/20 dark:bg-hsa-700/15 dark:ring-hsa-500/30">
+        <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-50">
+          One more step: your practitioner passcode
+        </h2>
+        <p className="mt-1.5 text-sm text-neutral-700 dark:text-neutral-200">
+          The HSA gives this passcode to the practitioners taking part in the
+          October collection. You only enter it once — after this, your personal
+          link and this device sign you straight in.
+        </p>
+        <p className="mt-2 text-sm text-neutral-700 dark:text-neutral-200">
+          Signing up as <strong className="break-all">{email}</strong>.
+        </p>
+      </div>
+
+      <Field
+        id="practitionerCode"
+        label="Practitioner passcode"
+        value={code}
+        onChange={onCodeChange}
+        autoComplete="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        autoFocus
+        required
+        hint="Capital letters don’t matter."
+        error={codeError ?? undefined}
+      />
+
+      {formError ? (
+        <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+          {formError}
+        </p>
+      ) : null}
+
+      <Button type="submit" size="lg" fullWidth busy={busy}>
+        Finish signing up
+      </Button>
+
+      <div className="rounded-2xl bg-white p-4 ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-800">
+        <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">
+          Don’t have a passcode?
+        </p>
+        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+          Ask the HSA at{' '}
+          <a className="underline" href="mailto:adrianadraxl@gmail.com">
+            adrianadraxl@gmail.com
+          </a>
+          . Until then you can try the app as a guest — nothing is saved.
+        </p>
+        <Link
+          href="/guest"
+          className="mt-3 inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 px-4 text-sm font-semibold text-neutral-800 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+        >
+          Look around as a guest
+        </Link>
+      </div>
+
+      <Button variant="ghost" fullWidth onClick={onBack}>
+        Back to your details
+      </Button>
+    </form>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 
 function Field({
@@ -357,6 +513,9 @@ function Field({
   required = false,
   hint,
   error,
+  autoCapitalize,
+  spellCheck,
+  autoFocus,
 }: {
   id: string
   label: string
@@ -368,6 +527,9 @@ function Field({
   required?: boolean
   hint?: string
   error?: string
+  autoCapitalize?: 'none' | 'sentences'
+  spellCheck?: boolean
+  autoFocus?: boolean
 }) {
   return (
     <div>
@@ -384,6 +546,9 @@ function Field({
         value={value}
         required={required}
         autoComplete={autoComplete}
+        autoCapitalize={autoCapitalize}
+        spellCheck={spellCheck}
+        autoFocus={autoFocus}
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
         onChange={(event) => onChange(event.target.value)}

@@ -16,6 +16,10 @@ process.env.COLLECTION_START_DATE = '2026-10-01'
 process.env.COLLECTION_END_DATE = '2026-10-31'
 // Never let a test accidentally open an SMTP connection.
 process.env.SMTP_HOST = ''
+// The passcode a new practitioner needs at signup. Set explicitly rather
+// than leaning on the development fallback, so the tests say what they use.
+export const TEST_PRACTITIONER_CODE = 'test-practitioner-code'
+process.env.PRACTITIONER_CODE = TEST_PRACTITIONER_CODE
 
 /**
  * Fake Google credentials. These only flip `googleSignInConfigured` to true so

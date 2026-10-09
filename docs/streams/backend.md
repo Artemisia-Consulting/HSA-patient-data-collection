@@ -15,7 +15,7 @@ not modified.
 
 | Endpoint | Method | FR | Notes |
 | --- | --- | --- | --- |
-| `/api/auth/signup` | POST | FR1, FR2 | Self-declared consent (`consent: true` is the consent record, stored as `consentAt`). Email is trimmed + lowercased before the uniqueness check. Returns 201 + session + `reminderLink`. Duplicate → 409 `EMAIL_ALREADY_REGISTERED` (see §3.1). |
+| `/api/auth/signup` | POST | FR1, FR2 | Self-declared consent (`consent: true` is the consent record, stored as `consentAt`). Email is trimmed + lowercased before the uniqueness check. Returns 201 + session + `reminderLink`. Duplicate → 409 `EMAIL_ALREADY_REGISTERED` (see §3.1). Since October 2026 a *new* email also needs `practitionerCode` matching `PRACTITIONER_CODE`: missing → 403 `PRACTITIONER_CODE_REQUIRED`, wrong → 403 `PRACTITIONER_CODE_INVALID` (rate limited), unset in production → 403 `FORBIDDEN`. Existing emails are never asked. |
 | `/api/auth/resume` | POST | FR1 | Authenticates by `reminderLinkId` alone and issues a fresh session. This is what makes a reminder link work on a new device with no cookie. |
 | `/api/auth/me` | GET | FR1, FR2, FR3 | Returns the practitioner, `today` (SAST, server-computed — never the device clock) and `hasLoggedToday`. |
 | `/api/auth/onboarded` | POST | FR2 | Idempotent; keeps the first `onboardedAt`. Returns the `me` shape so the client needs no follow-up request. |

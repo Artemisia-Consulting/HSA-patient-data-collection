@@ -43,11 +43,14 @@ const {
 const { CONDITION_CATEGORIES } = await import('../../src/lib/contract/enums')
 const { todayInSast } = await import('../../src/lib/dates')
 
+const { MOCK_PRACTITIONER_CODE } = await import('../../src/lib/client/mock/server')
+
 const SIGNUP = {
   email: 'thandi@example.co.za',
   fullName: 'Thandi Mokoena',
   province: 'Gauteng' as const,
   consent: true as const,
+  practitionerCode: MOCK_PRACTITIONER_CODE,
 }
 
 beforeEach(() => {
@@ -76,6 +79,36 @@ describe('POST /api/auth/signup', () => {
     await api.signup(SIGNUP)
     clearSession()
     await expect(api.signup(SIGNUP)).rejects.toMatchObject({
+      status: 409,
+      code: 'EMAIL_ALREADY_REGISTERED',
+    })
+  })
+
+  it('asks a new email for the practitioner passcode with 403 PRACTITIONER_CODE_REQUIRED', async () => {
+    const { practitionerCode: _omit, ...withoutCode } = SIGNUP
+    void _omit
+    await expect(api.signup(withoutCode)).rejects.toMatchObject({
+      status: 403,
+      code: 'PRACTITIONER_CODE_REQUIRED',
+    })
+  })
+
+  it('refuses a wrong passcode with 403 PRACTITIONER_CODE_INVALID and a field error', async () => {
+    await expect(
+      api.signup({ ...SIGNUP, practitionerCode: 'not-the-code' }),
+    ).rejects.toMatchObject({
+      status: 403,
+      code: 'PRACTITIONER_CODE_INVALID',
+      fieldErrors: { practitionerCode: ['Incorrect passcode'] },
+    })
+  })
+
+  it('checks for a duplicate before asking for a passcode', async () => {
+    await api.signup(SIGNUP)
+    clearSession()
+    const { practitionerCode: _omit, ...withoutCode } = SIGNUP
+    void _omit
+    await expect(api.signup(withoutCode)).rejects.toMatchObject({
       status: 409,
       code: 'EMAIL_ALREADY_REGISTERED',
     })

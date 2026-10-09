@@ -56,8 +56,9 @@ export default async function SignupPage({
         Sign up once
       </h1>
       <p className="mt-1.5 mb-5 text-[15px] text-neutral-600 dark:text-neutral-300">
-        No password, no confirmation email. After this, opening your link goes
-        straight to the log form.
+        No password, no confirmation email — just the practitioner passcode
+        the HSA gave you, once. After this, opening your link goes straight to
+        the log form.
       </p>
 
       {identity ? (

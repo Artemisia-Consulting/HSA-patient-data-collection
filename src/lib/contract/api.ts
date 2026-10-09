@@ -55,6 +55,14 @@ export const API_ERROR_CODES = {
   UNAUTHENTICATED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  /**
+   * Signup for an email that is not yet a practitioner, without the
+   * practitioner passcode. The form answers it by asking for the passcode —
+   * it is a step in the flow, not a failure.
+   */
+  PRACTITIONER_CODE_REQUIRED: 403,
+  /** Signup with a practitioner passcode that is not the right one. */
+  PRACTITIONER_CODE_INVALID: 403,
   EMAIL_ALREADY_REGISTERED: 409,
   OUTSIDE_COLLECTION_WINDOW: 422,
   RATE_LIMITED: 429,
@@ -133,6 +141,7 @@ export type AnonymisedPractitioner = z.infer<typeof anonymisedPractitionerSchema
 
 /* ================================================================== *
  * POST /api/auth/signup   → 201 | 409 EMAIL_ALREADY_REGISTERED
+ *                         | 403 PRACTITIONER_CODE_REQUIRED / _INVALID
  * ================================================================== */
 
 export const signupRequestSchema = z.object({
@@ -152,6 +161,17 @@ export const signupRequestSchema = z.object({
   consent: z.literal(true, {
     message: 'Please confirm you agree to take part',
   }),
+  /**
+   * The practitioner passcode the HSA gives to participating practitioners
+   * (PRACTITIONER_CODE on the server, October 2026). Required only to create
+   * a *new* practitioner: an email that is already registered never needs
+   * it, which is how everyone who signed up before the passcode existed
+   * stays registered. Without it, a newcomer can still use guest mode.
+   *
+   * It proves membership, not consent — the tick above is still the consent
+   * record.
+   */
+  practitionerCode: z.string().trim().max(200).optional(),
 })
 export type SignupRequest = z.infer<typeof signupRequestSchema>
 

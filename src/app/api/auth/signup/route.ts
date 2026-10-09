@@ -2,14 +2,27 @@
  * POST /api/auth/signup — FR1, user story 1.6.
  *
  * Email plus basic details. Ticking the consent box *is* the consent record:
- * there is no verification step and no cross-check against the survey, by
- * product decision. The response carries a session token (also set as a
- * cookie, so the PWA stays signed in on-device) and the pre-built personalised
- * reminder link.
+ * there is no consent-verification step and no cross-check against the
+ * survey, by product decision. The response carries a session token (also set
+ * as a cookie, so the PWA stays signed in on-device) and the pre-built
+ * personalised reminder link.
  *
  * Duplicate email is the interesting case (rubric item 1, tier 3). See
  * `src/lib/server/recovery.ts` for why it answers 409 and mails the existing
  * link rather than signing the caller in.
+ *
+ * A *new* email also needs the practitioner passcode (October 2026, see
+ * `src/lib/server/practitionerCode.ts`). The order matters:
+ *
+ *   1. Validate the details.
+ *   2. Already registered? The existing paths, unchanged — no passcode is
+ *      ever asked of someone who already has a row.
+ *   3. New, and no passcode → 403 PRACTITIONER_CODE_REQUIRED, which the form
+ *      answers by asking for it. Wrong passcode → 403
+ *      PRACTITIONER_CODE_INVALID. Only then is the row created.
+ *
+ * Nothing is written before step 3 passes, so someone without the passcode
+ * leaves no trace in the practitioner table — they are pointed at guest mode.
  *
  * OWNERSHIP: Stream 1 (backend).
  */
@@ -20,6 +33,7 @@ import { prisma } from '@/lib/db'
 import { attachSession, createSession, resolveAuth } from '@/lib/server/auth'
 import { errorResponse, readJsonBody, validationError, withRoute } from '@/lib/server/errors'
 import { clientIp, jsonResponse } from '@/lib/server/http'
+import { expectedPractitionerCode, practitionerCodeMatches } from '@/lib/server/practitionerCode'
 import { RATE_LIMITS, consumeRateLimit } from '@/lib/server/rateLimit'
 import { sendAccessLink } from '@/lib/server/recovery'
 import { toAuthSessionResponse } from '@/lib/server/serialise'
@@ -90,6 +104,42 @@ export const POST = withRoute(async (request: Request): Promise<NextResponse> =>
         ? 'That email is already signed up. We have emailed your personal sign-in link to it — open that link to carry on logging.'
         : 'That email is already signed up. Open the personal link in one of your reminder emails to sign back in, or email adrianadraxl@gmail.com to have it resent.',
       { email: ['This email is already registered'] },
+    )
+  }
+
+  // A new practitioner: the passcode is what makes them one.
+  const expectedCode = expectedPractitionerCode()
+  if (!expectedCode) {
+    console.error('[auth] PRACTITIONER_CODE is not set; refusing new practitioner signups')
+    return errorResponse(
+      'FORBIDDEN',
+      'New practitioner sign-up is not open on this deployment yet. You can still look around as a guest.',
+    )
+  }
+
+  const givenCode = parsed.data.practitionerCode
+  if (!givenCode) {
+    return errorResponse(
+      'PRACTITIONER_CODE_REQUIRED',
+      'Enter the practitioner passcode from the HSA to finish signing up.',
+      { practitionerCode: ['Enter the practitioner passcode'] },
+    )
+  }
+
+  const codeLimit = consumeRateLimit(
+    `practitioner-code:${clientIp(request)}`,
+    RATE_LIMITS.practitionerCode.limit,
+    RATE_LIMITS.practitionerCode.windowMs,
+  )
+  if (!codeLimit.allowed) {
+    return errorResponse('RATE_LIMITED', 'Too many attempts. Please try again shortly.')
+  }
+
+  if (!practitionerCodeMatches(givenCode, expectedCode)) {
+    return errorResponse(
+      'PRACTITIONER_CODE_INVALID',
+      'That passcode isn’t right. Check it with the HSA, or look around as a guest for now.',
+      { practitionerCode: ['Incorrect passcode'] },
     )
   }
 

@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { createPractitioner, initTestDb, issueSession, resetDb } from './helpers/db'
+import { TEST_PRACTITIONER_CODE } from './helpers/env'
 import { apiRequest, readJson, sessionCookieValue } from './helpers/request'
 
 import {
@@ -22,6 +23,7 @@ const validSignup = {
   fullName: 'Thandi Mokoena',
   province: 'Gauteng',
   consent: true as const,
+  practitionerCode: TEST_PRACTITIONER_CODE,
 }
 
 beforeAll(async () => {

@@ -123,6 +123,26 @@ time; nothing is lost.
 
 ---
 
+## Signing up: the practitioner passcode
+
+New practitioners need a **practitioner passcode** from the HSA. After filling
+in the sign-up form, the app asks for it once; after that they are registered
+and never asked again. Anyone already signed up is never asked at all.
+
+On your own computer the passcode is **`hsa-dev-practitioner`** unless you put
+a different one in the `.env` file:
+
+```
+PRACTITIONER_CODE="your-passcode-here"
+```
+
+On the live site (Vercel) there is no fallback: until `PRACTITIONER_CODE` is
+set under **Project → Settings → Environment Variables** (then redeploy), new
+practitioners cannot sign up — they can only use guest mode. Practitioners who
+are already registered are not affected either way.
+
+---
+
 ## Getting back into your own log
 
 You sign up once. After that there are three ways back in, and you never need
@@ -263,6 +283,8 @@ this table:
 | `access_denied` on a Google page | Your address isn't on the app's test-user list | Add it under **Test users** at <https://console.cloud.google.com/auth/audience> |
 | `redirect_uri_mismatch` on a Google page | The URI in the Google console doesn't match the app | It must be `http://localhost:3000/api/oauth/callback/google` — check `oauth`, not `auth` |
 | `Google sign-in is not configured on this deployment` | The three Google settings aren't filled in | See "Optional: Continue with Google", then restart the app |
+| `New practitioner sign-up is not open on this deployment yet` | `PRACTITIONER_CODE` isn't set on the live site | Set it in Vercel → Settings → Environment Variables, then redeploy |
+| `That passcode isn't right` | The practitioner passcode was mistyped, or it was changed | Check it against `PRACTITIONER_CODE` (capital letters don't matter) |
 | The dashboard says the area is for the research team | You're signed in as a practitioner, not a researcher | Run `npm run db:researcher`, then sign in at `/researcher-signin` |
 
 If your problem isn't in the table: copy the **last few lines of red text**
