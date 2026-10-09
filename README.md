@@ -104,6 +104,26 @@ Consent is self-declared at signup — ticking the box *is* the consent record.
 There is no cross-check against the retrospective survey, by decision of the
 product owner (user story 1.6).
 
+## Guest mode
+
+`/guest` is for people who are neither practitioners nor researchers — HSA
+members who are curious, colleagues being shown the project. It is not an
+account: there is no guest row, no session, and no request to any
+authenticated route, so a guest can neither add to the dataset nor see any of
+it.
+
+- **`/guest/log`** runs the real `DailyLogForm` in practice mode. Nothing is
+  sent, no draft is written, and the remembered answer defaults are left alone
+  (a guest on a practitioner's phone must not change their next real entry).
+- **`/guest/dashboard`** is the research dashboard drawn from made-up sample
+  data generated in the browser (`src/lib/client/demo/sample-dashboard.ts`):
+  twelve imaginary practitioners labelled `SAMPLE-01`…`SAMPLE-12`, a
+  "made-up sample data" banner, and no Excel/CSV download. It uses the same
+  filter rules as the real dashboard but a separate screen component, so it
+  cannot weaken the real one's access checks.
+
+It is linked from the foot of `/signup`, `/signin` and `/researcher-signin`.
+
 ## Parallel build
 
 Work was split across three streams building simultaneously in separate

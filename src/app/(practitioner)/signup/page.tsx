@@ -14,12 +14,16 @@
  * form owns every Google button so its signup mode and its already-registered
  * panel can never both show one at the same time.
  *
+ * Anyone who is not a practitioner — and so should not be signing up — is
+ * offered guest mode at the foot of the page instead (/guest).
+ *
  * OWNER: Stream 2.
  */
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import Link from 'next/link'
 
+import { GuestInvite } from '@/components/guest/GuestInvite'
 import { AppShell } from '@/components/shell/AppShell'
 import { SignupForm } from '@/components/signup/SignupForm'
 import { googleIdentity, googleSignInConfigured } from '@/lib/server/googleAuth'
@@ -88,6 +92,8 @@ export default async function SignupPage({
           Sign in here
         </Link>
       </p>
+
+      <GuestInvite />
     </AppShell>
   )
 }

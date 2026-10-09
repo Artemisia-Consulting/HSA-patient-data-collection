@@ -25,6 +25,7 @@ hard-coded per screen.
 | Submit outcomes | FR3 | Explicit confirmation states: saved (new vs updated), queued offline, practised. |
 | Offline & durability | NFR | Outbox queues a submit that cannot reach the server and replays on reconnect; per-date draft autosaved so a killed PWA does not lose the entry; a late "nothing logged" reply can no longer overwrite taps made while loading (`shouldReplaceForm`). |
 | Privacy `/privacy` | POPIA | Plain-language privacy page; no patient-identifiable field exists anywhere in the UI, payloads, drafts or the outbox. |
+| Guest mode `/guest` | — | Added October 2026 for people who are neither practitioners nor researchers. No account and no session: `/guest/log` is `DailyLogForm` with `guest` (practice mode that also leaves the remembered defaults alone); `/guest/dashboard` is a separate screen reusing the dashboard's presentational components over seeded sample data from `src/lib/client/demo/sample-dashboard.ts` — no dashboard request is ever made, and downloads are hidden. Tested in `tests/frontend/sample-dashboard.test.ts`. |
 | PWA | NFR | `manifest.webmanifest` (standalone, portrait, 192/512 icons, "Log today" shortcut), service worker with cache-first static / network-first navigation and `offline.html` fallback, never caching `/api/*`. Registrar unregisters in dev and registers only in production. |
 
 ### The 30-second walkthrough (tap count)

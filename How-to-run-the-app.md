@@ -137,6 +137,22 @@ a password:
 
 ---
 
+## Guest mode — for anyone who just wants to look
+
+Not everyone who opens the app is taking part. Anyone can go to
+<http://localhost:3000/guest> (or tap **Look around as a guest** at the bottom
+of the sign-up and sign-in screens) to:
+
+- **try the daily log** — the real form, but nothing typed into it is saved or
+  sent anywhere;
+- **see the research dashboard** filled with **made-up sample data**. Every
+  number on that page is invented, and the page says so in a yellow banner.
+  The real research data is never shown to a guest.
+
+No sign-up and no code are needed, and there is nothing to switch on.
+
+---
+
 ## Optional: the researcher dashboard
 
 The dashboard at <http://localhost:3000/dashboard> shows the collected data as

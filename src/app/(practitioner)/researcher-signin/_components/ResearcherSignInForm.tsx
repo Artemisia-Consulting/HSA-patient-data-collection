@@ -98,6 +98,10 @@ export function ResearcherSignInForm() {
         <Link href="/signup" className="font-medium text-hsa-700 underline dark:text-hsa-100">
           Practitioner sign-up
         </Link>
+        {' · '}
+        <Link href="/guest/dashboard" className="font-medium text-hsa-700 underline dark:text-hsa-100">
+          See the dashboard with sample data
+        </Link>
       </p>
     </>
   )
