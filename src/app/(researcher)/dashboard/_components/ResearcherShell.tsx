@@ -88,7 +88,7 @@ export function ResearcherShell({ children, subtitle }: ResearcherShellProps) {
       <footer className="mx-auto max-w-7xl px-4 pb-10 text-xs text-neutral-500 dark:text-neutral-400">
         Every figure on this page is an aggregate of de-identified entries. No patient
         identifier is collected anywhere in this system, and no practitioner email is
-        served to this screen or to the CSV export.
+        served to this screen or to the Excel and CSV exports.
       </footer>
     </div>
   )

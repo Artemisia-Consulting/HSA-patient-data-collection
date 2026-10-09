@@ -7,6 +7,7 @@
  *   2. Category   — what is homeopathy carrying in this country?
  *   3. Basis      — how much of that is a practitioner's own diagnosis?
  *   4. Referral   — is this care the conventional system already knows about?
+ *                   (Drawn by ConventionalCareChart: one share bar per question.)
  *
  * Colours are fixed hexes rather than CSS variables because recharts renders
  * to SVG attributes, and each one is chosen to stay legible on both the light
@@ -19,6 +20,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   Pie,
   PieChart,
@@ -29,11 +31,8 @@ import {
 } from 'recharts'
 
 import type { DashboardSummary } from '@/lib/contract/api'
-import {
-  DIAGNOSIS_BASIS_LABELS,
-  GP_CO_MANAGEMENT_LABELS,
-  REFERRED_BY_GP_LABELS,
-} from '@/lib/contract/enums'
+import { DIAGNOSIS_BASIS_LABELS } from '@/lib/contract/enums'
+import { ConventionalCareChart } from './ConventionalCareChart'
 import { shortLogDate } from './format'
 
 const AXIS = '#9ca3af'
@@ -95,33 +94,16 @@ export function DashboardCharts({ summary }: { summary: DashboardSummary }) {
     .map((row) => ({ label: row.label, entries: row.entries }))
     .sort((a, b) => b.entries - a.entries)
 
+  // The legend carries each share, so the donut reads without hovering.
+  const basisTotal = summary.byDiagnosisBasis.reduce((sum, row) => sum + row.entries, 0)
   const bases = summary.byDiagnosisBasis
     .map((row) => ({
-      label: DIAGNOSIS_BASIS_LABELS[row.diagnosisBasis],
+      label: `${DIAGNOSIS_BASIS_LABELS[row.diagnosisBasis]} · ${Math.round(
+        (row.entries / Math.max(1, basisTotal)) * 100,
+      )}%`,
       entries: row.entries,
     }))
     .filter((row) => row.entries > 0)
-
-  const { coManagement } = summary
-  const referral = [
-    {
-      answer: GP_CO_MANAGEMENT_LABELS.YES,
-      'Also seeing one': coManagement.alsoSeeingGpYes,
-      'Referred by one': coManagement.referredByGpYes,
-    },
-    {
-      answer: GP_CO_MANAGEMENT_LABELS.NO,
-      'Also seeing one': coManagement.alsoSeeingGpNo,
-      'Referred by one': coManagement.referredByGpNo,
-    },
-    {
-      // The third option differs between the two questions — "Unsure" against
-      // "N/A" — so the axis says both rather than pretending they are one answer.
-      answer: `${GP_CO_MANAGEMENT_LABELS.UNSURE} / ${REFERRED_BY_GP_LABELS.NOT_APPLICABLE}`,
-      'Also seeing one': coManagement.alsoSeeingGpUnsure,
-      'Referred by one': coManagement.referredByGpNotApplicable,
-    },
-  ]
 
   const anyEntries = summary.totals.conditionEntries > 0
 
@@ -167,7 +149,7 @@ export function DashboardCharts({ summary }: { summary: DashboardSummary }) {
             <BarChart
               data={categories}
               layout="vertical"
-              margin={{ top: 4, right: 16, bottom: 0, left: 8 }}
+              margin={{ top: 4, right: 32, bottom: 0, left: 8 }}
             >
               <CartesianGrid stroke={GRID} horizontal={false} />
               <XAxis
@@ -186,7 +168,10 @@ export function DashboardCharts({ summary }: { summary: DashboardSummary }) {
                 axisLine={false}
               />
               <Tooltip {...TOOLTIP} cursor={{ fill: GRID }} />
-              <Bar dataKey="entries" name="Conditions" fill={BAR} radius={[0, 4, 4, 0]} />
+              <Bar dataKey="entries" name="Conditions" fill={BAR} radius={[0, 4, 4, 0]}>
+                {/* The count at the end of each bar, so nobody reads it off the axis. */}
+                <LabelList dataKey="entries" position="right" fill={AXIS} fontSize={12} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         ) : (
@@ -221,25 +206,10 @@ export function DashboardCharts({ summary }: { summary: DashboardSummary }) {
 
       <Panel
         title="Conventional medical care"
-        hint="Whether the patient was already seeing, or was referred by, a conventional medical practitioner."
+        hint="Answers to the two referral questions, as a share of all conditions recorded."
       >
         {anyEntries ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={referral} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-              <CartesianGrid stroke={GRID} vertical={false} />
-              <XAxis dataKey="answer" tick={{ fill: AXIS, fontSize: 12 }} tickLine={false} />
-              <YAxis
-                allowDecimals={false}
-                tick={{ fill: AXIS, fontSize: 12 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip {...TOOLTIP} cursor={{ fill: GRID }} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="Also seeing one" fill={NEW} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Referred by one" fill={SLICES[2]} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <ConventionalCareChart summary={summary} />
         ) : (
           <Empty>No conditions match these filters.</Empty>
         )}

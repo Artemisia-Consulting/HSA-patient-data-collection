@@ -4,8 +4,8 @@
  * The research dashboard (FR8).
  *
  * Everything here is read-only and aggregate. The screen holds one filter
- * object; the summary and the entry table are two views of it, and the CSV
- * export is a third, so the three can never disagree about what is being
+ * object; the summary and the entry table are two views of it, and the
+ * Excel/CSV export is a third, so the three can never disagree about what is being
  * looked at.
  *
  * Access is settled twice, and the second time is the one that counts: this
@@ -242,7 +242,8 @@ export function DashboardScreen() {
           onChange={applyPatch}
           onReset={reset}
           taxonomy={taxonomy}
-          exportUrl={api.dashboardExportUrl(filter)}
+          excelExportUrl={api.dashboardExportUrl(filter, 'xlsx')}
+          csvExportUrl={api.dashboardExportUrl(filter)}
           busy={busy}
         />
 

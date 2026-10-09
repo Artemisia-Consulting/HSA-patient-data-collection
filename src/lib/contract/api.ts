@@ -377,7 +377,7 @@ export type DispatchResult = z.infer<typeof dispatchResultSchema>
  *
  * GET /api/dashboard/summary  → 200 | 403 (RESEARCHER role only)
  * GET /api/dashboard/entries  → 200 | 403
- * GET /api/dashboard/export   → 200 text/csv
+ * GET /api/dashboard/export   → 200 text/csv (or .xlsx with ?format=xlsx)
  *
  * POPIA: responses carry Practitioner.id only. Never an email.
  * ================================================================== */

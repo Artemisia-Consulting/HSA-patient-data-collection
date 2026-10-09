@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { createPractitioner, initTestDb, issueSession, resetDb } from './helpers/db'
 import { apiRequest, readJson } from './helpers/request'
+import { sheetText, unzipXlsx } from './helpers/xlsx'
 
 import {
   apiErrorSchema,
@@ -14,6 +15,7 @@ import { prisma } from '@/lib/db'
 import { GET as summary } from '@/app/api/dashboard/summary/route'
 import { GET as entries } from '@/app/api/dashboard/entries/route'
 import { GET as exportCsv, EXPORT_COLUMNS } from '@/app/api/dashboard/export/route'
+import { WORKBOOK_ENTRY_COLUMNS } from '@/lib/server/exportWorkbook'
 
 let researcherToken: string
 let practitionerToken: string
@@ -559,5 +561,91 @@ describe('GET /api/dashboard/export (FR8)', () => {
     const csv = await csvFor()
     expect(csv).toContain('"\'=HYPERLINK(""http://evil"",""click"")"')
     expect(csv).not.toContain('\n=HYPERLINK')
+  })
+})
+
+describe('GET /api/dashboard/export?format=xlsx (FR8)', () => {
+  async function workbookFor(query = ''): Promise<Map<string, string>> {
+    const separator = query ? '&' : '?'
+    const response = await exportCsv(
+      apiRequest(`/api/dashboard/export${query}${separator}format=xlsx`, {
+        token: researcherToken,
+      }),
+      undefined,
+    )
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    expect(response.headers.get('content-disposition')).toMatch(/attachment; filename=".+\.xlsx"/)
+    return unzipXlsx(new Uint8Array(await response.arrayBuffer()))
+  }
+
+  it('is a workbook with an Entries sheet and a Summary sheet', async () => {
+    const files = await workbookFor()
+    expect(files.get('xl/workbook.xml')).toContain('name="Entries"')
+    expect(files.get('xl/workbook.xml')).toContain('name="Summary"')
+    expect(files.has('xl/worksheets/sheet1.xml')).toBe(true)
+    expect(files.has('xl/worksheets/sheet2.xml')).toBe(true)
+  })
+
+  it('has one row per entry, with readable headers and answers', async () => {
+    const rows = sheetText((await workbookFor()).get('xl/worksheets/sheet1.xml')!)
+    expect(rows).toHaveLength(14) // header + 13 rows, as in the CSV
+    expect(rows[0]).toEqual(WORKBOOK_ENTRY_COLUMNS.map((column) => column.header))
+
+    const anxiety = rows.find((row) => row.includes('MH_ANXIETY'))!
+    expect(anxiety).toContain('New')
+    expect(anxiety).toContain('Mental Health')
+    expect(anxiety).toContain('My diagnosis')
+    expect(anxiety).toContain('Yes')
+    expect(anxiety).not.toContain('CLINICAL_DIAGNOSIS')
+  })
+
+  it('honours the same filters as the CSV and says which were used', async () => {
+    const files = await workbookFor('?category=MENTAL_HEALTH')
+    expect(sheetText(files.get('xl/worksheets/sheet1.xml')!)).toHaveLength(2)
+
+    const summary = sheetText(files.get('xl/worksheets/sheet2.xml')!)
+    expect(summary.flat()).toContain('Category: Mental Health')
+    const conditions = summary.find((row) => row[0] === 'Conditions recorded')!
+    expect(conditions[1]).toBe('1')
+  })
+
+  it('carries no practitioner email (POPIA)', async () => {
+    const files = await workbookFor()
+    const all = [...files.values()].join('\n')
+    expect(all).not.toContain(practitionerA.email)
+    expect(all).toContain(practitionerA.id)
+  })
+
+  it('writes free text as text, never as a formula', async () => {
+    const patient = await prisma.patientEntry.findFirstOrThrow({
+      where: { dailyLog: { practitionerId: practitionerB.id } },
+    })
+    await prisma.conditionEntry.create({
+      data: {
+        patientEntryId: patient.id,
+        category: 'OTHER',
+        conditionCode: otherConditionCode('OTHER'),
+        conditionOther: '=HYPERLINK("http://evil","click")',
+        diagnosisBasis: 'CLINICAL_DIAGNOSIS',
+        alsoSeeingGp: 'NO',
+        referredByGp: 'NO',
+      },
+    })
+
+    const sheet = (await workbookFor()).get('xl/worksheets/sheet1.xml')!
+    expect(sheet).not.toContain('<f>')
+    expect(sheetText(sheet).flat()).toContain('=HYPERLINK("http://evil","click")')
+  })
+
+  it('treats an unknown format as the CSV it always was', async () => {
+    const response = await exportCsv(
+      apiRequest('/api/dashboard/export?format=pdf', { token: researcherToken }),
+      undefined,
+    )
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/csv')
   })
 })
