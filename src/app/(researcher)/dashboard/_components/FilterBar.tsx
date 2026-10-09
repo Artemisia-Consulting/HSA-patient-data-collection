@@ -9,6 +9,11 @@
  * a single discrete choice, and the researcher is on a laptop rather than
  * South African mobile data.
  *
+ * The guest dashboard (/guest/dashboard) uses this too, without the export
+ * URLs: a downloaded file outlives the "sample data" banner around it, so the
+ * sample offers no download at all rather than one that could be mistaken
+ * for the real dataset.
+ *
  * OWNER: Stream 2.
  */
 import type { TaxonomyResponse } from '@/lib/contract/api'
@@ -38,10 +43,10 @@ interface FilterBarProps {
   onReset: () => void
   /** Drives the condition list. Null until the taxonomy has loaded. */
   taxonomy: TaxonomyResponse | null
-  /** The Excel workbook — the download most people want. */
-  excelExportUrl: string
-  /** The raw CSV, for R, SPSS, Python and the like. */
-  csvExportUrl: string
+  /** The Excel workbook — the download most people want. Omit to hide downloads. */
+  excelExportUrl?: string
+  /** The raw CSV, for R, SPSS, Python and the like. Omit to hide downloads. */
+  csvExportUrl?: string
   busy: boolean
 }
 
@@ -64,6 +69,7 @@ export function FilterBar({
   busy,
 }: FilterBarProps) {
   const text = (key: keyof DashboardQuery) => String(value[key] ?? '')
+  const downloads = Boolean(excelExportUrl && csvExportUrl)
 
   /**
    * Conditions narrow to the chosen category, because a flat list of ~45 codes
@@ -199,19 +205,23 @@ export function FilterBar({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-3 dark:border-neutral-800">
-        <a
-          href={excelExportUrl}
-          className="inline-flex min-h-[44px] items-center rounded-xl bg-hsa-600 px-4 text-sm font-semibold text-white hover:bg-hsa-700"
-        >
-          Download Excel
-        </a>
-        <a
-          href={csvExportUrl}
-          title="Plain comma-separated file for analysis tools (R, SPSS, Python)"
-          className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-        >
-          CSV
-        </a>
+        {downloads ? (
+          <>
+            <a
+              href={excelExportUrl}
+              className="inline-flex min-h-[44px] items-center rounded-xl bg-hsa-600 px-4 text-sm font-semibold text-white hover:bg-hsa-700"
+            >
+              Download Excel
+            </a>
+            <a
+              href={csvExportUrl}
+              title="Plain comma-separated file for analysis tools (R, SPSS, Python)"
+              className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            >
+              CSV
+            </a>
+          </>
+        ) : null}
         <button
           type="button"
           onClick={onReset}
@@ -225,7 +235,9 @@ export function FilterBar({
         >
           {busy
             ? 'Updating…'
-            : 'Downloads use exactly these filters. The Excel file also opens in Google Sheets (upload it to Drive).'}
+            : downloads
+              ? 'Downloads use exactly these filters. The Excel file also opens in Google Sheets (upload it to Drive).'
+              : 'Downloads are switched off for sample data. Researchers can export the real dataset as Excel or CSV.'}
         </span>
       </div>
     </section>

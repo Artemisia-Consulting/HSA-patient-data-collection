@@ -33,6 +33,11 @@
  * lost on a bad signal), and an in-progress entry is autosaved per date (so a
  * backgrounded PWA killed by Android does not cost the whole thing).
  *
+ * Guest mode (/guest/log) is practice mode with different words around it,
+ * plus one more thing left unwritten: the remembered answer defaults. A guest
+ * on a practitioner's phone must not change what that practitioner's next
+ * real entry is pre-filled with.
+ *
  * OWNER: Stream 2.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -100,13 +105,21 @@ interface DailyLogFormProps {
   /** Practice mode (FR2, rubric item 3 tier 3): nothing is sent or stored. */
   practice?: boolean
   onFinishPractice?: () => void
+  /**
+   * Guest mode: practice mode for someone who is not a practitioner. Implies
+   * `practice`, never saves remembered defaults, and says "guest" rather than
+   * "1 October" around the form.
+   */
+  guest?: boolean
 }
 
 export function DailyLogForm({
   today,
-  practice = false,
+  practice: practiceProp = false,
   onFinishPractice,
+  guest = false,
 }: DailyLogFormProps) {
+  const practice = practiceProp || guest
   const online = useOnline()
 
   const [taxonomy, setTaxonomy] = useState<TaxonomyResponse | null>(null)
@@ -351,7 +364,7 @@ export function DailyLogForm({
 
     const nextDefaults = deriveDefaults(form, defaults ?? loadEntryDefaults())
     setDefaults(nextDefaults)
-    saveEntryDefaults(nextDefaults)
+    if (!guest) saveEntryDefaults(nextDefaults)
 
     if (practice) {
       setSubmitState({ kind: 'practised' })
@@ -383,7 +396,7 @@ export function DailyLogForm({
       setSubmitState({ kind: 'editing' })
       setSubmitError('Something went wrong saving your log. Please try again.')
     }
-  }, [defaults, form, practice, wasExisting])
+  }, [defaults, form, guest, practice, wasExisting])
 
   useEffect(() => {
     if (submitState.kind === 'editing' || submitState.kind === 'saving') return
@@ -409,6 +422,7 @@ export function DailyLogForm({
           void loadForDate(today)
         }}
         onFinishPractice={onFinishPractice}
+        guest={guest}
       />
     )
   }
@@ -464,8 +478,9 @@ export function DailyLogForm({
     <div className="pb-28">
       {practice ? (
         <p className="mb-3 rounded-xl bg-amber-100 px-3 py-2.5 text-sm font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
-          Practice run — nothing here is saved or sent. Try a full entry so
-          1 October is muscle memory.
+          {guest
+            ? 'Guest mode — this is the real logging form, but nothing you enter is saved or sent anywhere.'
+            : 'Practice run — nothing here is saved or sent. Try a full entry so 1 October is muscle memory.'}
         </p>
       ) : null}
 
@@ -567,6 +582,7 @@ function Confirmation({
   onEdit,
   onAnotherDay,
   onFinishPractice,
+  guest,
 }: {
   ref: React.Ref<HTMLDivElement>
   state: SubmitState
@@ -575,6 +591,7 @@ function Confirmation({
   onEdit: () => void
   onAnotherDay: () => void
   onFinishPractice?: () => void
+  guest: boolean
 }) {
   const queued = state.kind === 'queued'
   const practised = state.kind === 'practised'
@@ -611,11 +628,13 @@ function Confirmation({
       </h2>
 
       <p className="mt-1.5 text-sm text-neutral-600 dark:text-neutral-300">
-        {practised
-          ? 'Nothing was sent. From 1 October, that same flow files your day.'
-          : queued
-            ? 'No connection right now. It will send itself as soon as you’re back online — you don’t need to do anything.'
-            : `${formatLogDateLong(form.logDate)} is recorded.`}
+        {practised && guest
+          ? 'Nothing was saved or sent. For a registered practitioner, that same tap files the day into the study.'
+          : practised
+            ? 'Nothing was sent. From 1 October, that same flow files your day.'
+            : queued
+              ? 'No connection right now. It will send itself as soon as you’re back online — you don’t need to do anything.'
+              : `${formatLogDateLong(form.logDate)} is recorded.`}
       </p>
 
       <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
@@ -640,7 +659,19 @@ function Confirmation({
       ) : null}
 
       <div className="mt-5 space-y-2">
-        {practised ? (
+        {practised && guest ? (
+          <>
+            <Button size="lg" fullWidth onClick={onAnotherDay}>
+              Try another entry
+            </Button>
+            <Link
+              href="/guest/dashboard"
+              className="flex min-h-[44px] w-full items-center justify-center rounded-xl px-4 text-sm font-semibold text-hsa-700 underline dark:text-hsa-100"
+            >
+              See the sample research dashboard
+            </Link>
+          </>
+        ) : practised ? (
           <Button size="lg" fullWidth onClick={onFinishPractice}>
             I’m ready — finish setup
           </Button>

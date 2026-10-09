@@ -18,6 +18,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 
+import { GuestInvite } from '@/components/guest/GuestInvite'
 import { AppShell } from '@/components/shell/AppShell'
 import { GoogleSignInLink } from '@/components/signin/GoogleSignInLink'
 import { ReminderLinkForm } from '@/components/signin/ReminderLinkForm'
@@ -105,6 +106,8 @@ export default async function SignInPage({
           Sign up here
         </Link>
       </p>
+
+      <GuestInvite />
     </AppShell>
   )
 }

@@ -29,9 +29,14 @@ const TH =
   'whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-neutral-600 dark:text-neutral-400'
 const TD = 'whitespace-nowrap px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200'
 
-/** Enough of an id to group rows by eye, without pretending to be readable. */
+/**
+ * Enough of an id to group rows by eye, without pretending to be readable.
+ * Short ids are shown whole: the guest dashboard's `SAMPLE-01` must read as
+ * sample data, not be trimmed to `PLE-01`. Real ids are 25-character cuids.
+ */
 function shortId(id: string | null): string {
-  return id ? id.slice(-6) : '—'
+  if (!id) return '—'
+  return id.length <= 10 ? id : id.slice(-6)
 }
 
 function ConditionCell({ row }: { row: DashboardEntryRow }) {
