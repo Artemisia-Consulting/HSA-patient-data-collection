@@ -175,11 +175,20 @@ export function getDashboardEntries(
 }
 
 /**
- * The CSV is a browser download, not a parsed response, so this returns the URL
- * for a plain link rather than fetching it. The session cookie authenticates
- * the navigation; a fetch + blob would work too but would put the whole export
- * through memory on a machine that may be downloading a year of data.
+ * The export is a browser download, not a parsed response, so this returns the
+ * URL for a plain link rather than fetching it. The session cookie
+ * authenticates the navigation; a fetch + blob would work too but would put
+ * the whole export through memory on a machine that may be downloading a year
+ * of data.
+ *
+ * `xlsx` is the Excel/Google Sheets workbook; `csv` is the raw file for
+ * analysis tools.
  */
-export function dashboardExportUrl(query: DashboardQuery = {}): string {
-  return `/api/dashboard/export${dashboardQueryString(query)}`
+export function dashboardExportUrl(
+  query: DashboardQuery = {},
+  format: 'csv' | 'xlsx' = 'csv',
+): string {
+  const qs = dashboardQueryString(query)
+  if (format === 'csv') return `/api/dashboard/export${qs}`
+  return `/api/dashboard/export${qs ? `${qs}&` : '?'}format=xlsx`
 }

@@ -140,7 +140,7 @@ a password:
 ## Optional: the researcher dashboard
 
 The dashboard at <http://localhost:3000/dashboard> shows the collected data as
-charts, a filterable table and a CSV download. It needs a researcher account,
+charts, a filterable table and an Excel (or CSV) download. It needs a researcher account,
 which the ordinary setup doesn't create. Two extra commands:
 
 ```

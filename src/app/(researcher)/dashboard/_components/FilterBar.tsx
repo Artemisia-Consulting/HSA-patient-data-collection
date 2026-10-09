@@ -38,7 +38,10 @@ interface FilterBarProps {
   onReset: () => void
   /** Drives the condition list. Null until the taxonomy has loaded. */
   taxonomy: TaxonomyResponse | null
-  exportUrl: string
+  /** The Excel workbook — the download most people want. */
+  excelExportUrl: string
+  /** The raw CSV, for R, SPSS, Python and the like. */
+  csvExportUrl: string
   busy: boolean
 }
 
@@ -56,7 +59,8 @@ export function FilterBar({
   onChange,
   onReset,
   taxonomy,
-  exportUrl,
+  excelExportUrl,
+  csvExportUrl,
   busy,
 }: FilterBarProps) {
   const text = (key: keyof DashboardQuery) => String(value[key] ?? '')
@@ -196,10 +200,17 @@ export function FilterBar({
 
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-3 dark:border-neutral-800">
         <a
-          href={exportUrl}
+          href={excelExportUrl}
           className="inline-flex min-h-[44px] items-center rounded-xl bg-hsa-600 px-4 text-sm font-semibold text-white hover:bg-hsa-700"
         >
-          Download CSV
+          Download Excel
+        </a>
+        <a
+          href={csvExportUrl}
+          title="Plain comma-separated file for analysis tools (R, SPSS, Python)"
+          className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+        >
+          CSV
         </a>
         <button
           type="button"
@@ -212,7 +223,9 @@ export function FilterBar({
           aria-live="polite"
           className="text-xs text-neutral-500 dark:text-neutral-400"
         >
-          {busy ? 'Updating…' : 'The CSV export uses exactly these filters.'}
+          {busy
+            ? 'Updating…'
+            : 'Downloads use exactly these filters. The Excel file also opens in Google Sheets (upload it to Drive).'}
         </span>
       </div>
     </section>

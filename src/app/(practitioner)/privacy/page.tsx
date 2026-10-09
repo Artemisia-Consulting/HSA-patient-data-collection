@@ -75,7 +75,7 @@ export default function PrivacyPage() {
           <strong>anonymous practitioner ID</strong> and your{' '}
           <strong>province</strong> — which is why sign-up asks for it and will
           not proceed without one. Your email address and your name are never
-          included in any dashboard view or CSV export. Your email is used for
+          included in any dashboard view or data export. Your email is used for
           one thing: sending you your daily logging link.
         </p>
       </Section>
