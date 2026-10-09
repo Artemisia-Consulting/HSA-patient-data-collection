@@ -66,4 +66,10 @@ export const RATE_LIMITS = {
   resume: { limit: 30, windowMs: 15 * 60 * 1000 },
   /** Researcher code: a short shared secret, so the tightest ceiling. */
   researcher: { limit: 10, windowMs: 15 * 60 * 1000 },
+  /**
+   * Practitioner passcode: also a short shared secret, so the same ceiling.
+   * Counted only on attempts that carry a passcode, so filling in the form
+   * and being asked for one costs nothing.
+   */
+  practitionerCode: { limit: 10, windowMs: 15 * 60 * 1000 },
 } as const

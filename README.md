@@ -31,6 +31,9 @@ npm run db:seed        # loads the 45-condition taxonomy
 npm run dev
 ```
 
+Signing up locally asks for the practitioner passcode: `hsa-dev-practitioner`
+unless `PRACTITIONER_CODE` is set in `.env`.
+
 If `npm install` was ever run with `--ignore-scripts`, the native SQLite
 binding will be missing and Prisma will fail at connect time with a long list
 of paths it could not find `better_sqlite3.node` in. Fix:
@@ -103,6 +106,23 @@ would mean changing the contract.
 Consent is self-declared at signup — ticking the box *is* the consent record.
 There is no cross-check against the retrospective survey, by decision of the
 product owner (user story 1.6).
+
+## Who may sign up: the practitioner passcode
+
+Since October 2026 a *new* practitioner also needs the passcode the HSA gives
+to participating practitioners (`PRACTITIONER_CODE`). The sign-up form sends
+the details first; an email that is already registered gets the usual
+already-registered answer and is never asked, and a new one gets
+`403 PRACTITIONER_CODE_REQUIRED`, which the form answers with a passcode step.
+Only a correct passcode creates the `Practitioner` row — so "registered
+practitioner" and "has a row" stay the same fact, with no new column and no
+migration, and everyone who signed up before the passcode existed is
+registered by definition. Someone without it is pointed at guest mode.
+
+The passcode is compared in constant time, ignores case, is rate limited
+(10 attempts / 15 min per IP), and — like `RESEARCHER_CODE` — closes new
+sign-ups in production when unset rather than leaving them open. See
+`src/lib/server/practitionerCode.ts`.
 
 ## Guest mode
 

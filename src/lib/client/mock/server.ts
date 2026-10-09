@@ -9,6 +9,8 @@
  *
  * What it faithfully reproduces, because the frontend branches on it:
  *   - 201 on signup, 409 EMAIL_ALREADY_REGISTERED on a repeat email
+ *   - 403 PRACTITIONER_CODE_REQUIRED / _INVALID for a new email without the
+ *     right practitioner passcode (MOCK_PRACTITIONER_CODE)
  *   - 401 UNAUTHENTICATED with no token and no `?k=`
  *   - 400 VALIDATION_FAILED with `fieldErrors`, from the contract schemas
  *   - 200 vs 201 on the log upsert, 404 on a date with no log
@@ -77,6 +79,13 @@ function fail(
 ): Response {
   return json({ error: { code, message, ...(fieldErrors ? { fieldErrors } : {}) } }, status)
 }
+
+/**
+ * The passcode the mock accepts. The same value as the real server's
+ * development fallback (src/lib/server/practitionerCode.ts), which the mock
+ * cannot import without pulling server code into the browser bundle.
+ */
+export const MOCK_PRACTITIONER_CODE = 'hsa-dev-practitioner'
 
 const UNAUTHENTICATED = () =>
   fail(401, 'UNAUTHENTICATED', 'Please sign up or open your reminder link again.')
@@ -200,6 +209,25 @@ async function handleSignup(init?: RequestInit): Promise<Response> {
       'EMAIL_ALREADY_REGISTERED',
       'That email is already signed up. We can send your logging link to it.',
       { email: ['This email is already registered'] },
+    )
+  }
+
+  // Same order as the real route: duplicates first, then the passcode.
+  const code = parsed.data.practitionerCode
+  if (!code) {
+    return fail(
+      403,
+      'PRACTITIONER_CODE_REQUIRED',
+      'Enter the practitioner passcode from the HSA to finish signing up.',
+      { practitionerCode: ['Enter the practitioner passcode'] },
+    )
+  }
+  if (code.toLowerCase() !== MOCK_PRACTITIONER_CODE) {
+    return fail(
+      403,
+      'PRACTITIONER_CODE_INVALID',
+      'That passcode isn’t right. Check it with the HSA, or look around as a guest for now.',
+      { practitionerCode: ['Incorrect passcode'] },
     )
   }
 

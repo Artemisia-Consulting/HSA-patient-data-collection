@@ -56,6 +56,7 @@ async function signIn() {
     fullName: 'Test Practitioner',
     province: 'Gauteng',
     consent: true,
+    practitionerCode: 'hsa-dev-practitioner',
   })
 }
 
